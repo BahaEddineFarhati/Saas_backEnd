@@ -1,0 +1,18 @@
+/**
+ * Services contain all business logic.
+ * They receive plain arguments and return plain values or throw AppError.
+ * Services never import from req/res objects.
+ *
+ * Example service:
+ *
+ * import { AppError } from "@/utils/AppError";
+ * import { prisma } from "@/lib/prisma";
+ *
+ * export const registerUser = async (data: { email: string; password: string }) => {
+ *   const existing = await prisma.user.findUnique({ where: { email: data.email } });
+ *   if (existing) {
+ *     throw new AppError("Email already registered", 409, "EMAIL_EXISTS");
+ *   }
+ *   return prisma.user.create({ data });
+ * };
+ */
