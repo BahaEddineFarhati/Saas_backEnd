@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
+import authRoutes from "@/routes/authRoutes";
 
 const router = Router();
 
@@ -16,5 +17,13 @@ router.get(
     });
   })
 );
+
+/**
+ * Mount auth routes at /auth
+ * POST /api/v1/auth/login
+ * POST /api/v1/auth/logout
+ * POST /api/v1/auth/refresh
+ */
+router.use("/auth", authRoutes);
 
 export default router;
