@@ -1,0 +1,118 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organisation {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  jobOpenings  JobOpening[]
+
+  @@map("organisations")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            Role     @default(RECRUITER)
+  organisationId  String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  jobOpenings    JobOpening[] @relation("CreatedBy")
+  refreshTokens  RefreshToken[]
+
+  @@index([email])
+  @@index([organisationId])
+  @@map("users")
+}
+
+model JobOpening {
+  id                  String   @id @default(cuid())
+  title               String
+  profileDescription  String
+  status              JobStatus @default(OPEN)
+  organisationId      String
+  createdById         String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  organisation  Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy     User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  candidates    Candidate[]
+
+  @@index([organisationId])
+  @@map("job_openings")
+}
+
+model Candidate {
+  id            String   @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String
+  rawFileUrl    String
+  parsedJson    Json?
+  score         Float    @default(0)
+  status        CandidateStatus @default(NEW)
+  jobOpeningId  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobOpening    JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+
+  @@index([jobOpeningId])
+  @@map("candidates")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum Role {
+  ADMIN
+  RECRUITER
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum CandidateStatus {
+  NEW
+  SHORTLISTED
+  REJECTED
+  OFFERED
+}
