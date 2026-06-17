@@ -1,49 +1,16 @@
 const API_URL = "http://localhost:3001/api/v1";
 
-async function runTests() {
-  console.log("=== Starting Authentication Middleware Tests ===\n");
+async function runLoginTests() {
+  console.log("==================================================");
+  console.log("   TESTING LOGIN PHASES & SCENARIOS              ");
+  console.log("==================================================\n");
 
-  // Scenario 1: Request without Authorization header
-  try {
-    console.log("1. Testing route without Authorization header...");
-    const res = await fetch(`${API_URL}/protected-test`);
-    const data = await res.json();
-    console.log(`   Status: ${res.status}`);
-    console.log(`   Response: ${JSON.stringify(data, null, 2)}\n`);
-  } catch (err) {
-    console.error("   Error:", err.message);
-  }
+  const testEmail = `login-test-${Date.now()}@example.com`;
+  const password = "SecurePassword123!";
 
-  // Scenario 2: Testing route with malformed token (e.g. Bearer abc123)
+  // 1. Setup: Register the user so they exist in the DB
   try {
-    console.log("2. Testing route with malformed token (Bearer abc123)...");
-    const res = await fetch(`${API_URL}/protected-test`, {
-      headers: { "Authorization": "Bearer abc123" }
-    });
-    const data = await res.json();
-    console.log(`   Status: ${res.status}`);
-    console.log(`   Response: ${JSON.stringify(data, null, 2)}\n`);
-  } catch (err) {
-    console.error("   Error:", err.message);
-  }
-
-  // Scenario 3: Testing route with bad header format (NotBearer abc123)
-  try {
-    console.log("3. Testing route with bad header format (NotBearer abc123)...");
-    const res = await fetch(`${API_URL}/protected-test`, {
-      headers: { "Authorization": "NotBearer abc123" }
-    });
-    const data = await res.json();
-    console.log(`   Status: ${res.status}`);
-    console.log(`   Response: ${JSON.stringify(data, null, 2)}\n`);
-  } catch (err) {
-    console.error("   Error:", err.message);
-  }
-
-  // Scenario 4: Register and Login to get a valid token
-  try {
-    const email = `test-${Date.now()}@example.com`;
-    console.log(`4. Registering a new test user (${email})...`);
+    console.log(`[Setup] Registering test user: ${testEmail}...`);
     const regRes = await fetch(`${API_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,32 +18,113 @@ async function runTests() {
         organisationName: "Acme Corp",
         firstName: "John",
         lastName: "Doe",
-        email: email,
-        password: "SecurePassword123!"
+        email: testEmail,
+        password: password
       })
     });
     const regData = await regRes.json();
-    console.log(`   Register Status: ${regRes.status}`);
-
-    if (regRes.status !== 201) {
-      console.log("Register response:", regData);
+    if (regRes.status === 201) {
+      console.log("   User registered successfully!\n");
+    } else {
+      console.error("   Failed to register user:", regData);
       return;
     }
+  } catch (err) {
+    console.error("   Setup error:", err.message);
+    return;
+  }
 
-    const token = regData.accessToken;
-    console.log("   Successfully registered and received access token.");
-
-    // Scenario 5: Access protected route with valid token
-    console.log("\n5. Testing protected route with valid token...");
-    const protRes = await fetch(`${API_URL}/protected-test`, {
-      headers: { "Authorization": `Bearer ${token}` }
+  // PHASE 1: Missing Fields (Email/Password missing)
+  try {
+    console.log("PHASE 1: Testing Login with missing fields...");
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "",
+        password: ""
+      })
     });
-    const protData = await protRes.json();
-    console.log(`   Status: ${protRes.status}`);
-    console.log(`   Response: ${JSON.stringify(protData, null, 2)}\n`);
+    const data = await res.json();
+    console.log(`   Status: ${res.status}`);
+    console.log(`   Response:`, JSON.stringify(data, null, 2));
+    if (res.status === 400 && data.error.code === "INVALID_INPUT") {
+      console.log("   ✅ Success: Returned 400 INVALID_INPUT\n");
+    } else {
+      console.log("   ❌ Fail: Unexpected response\n");
+    }
+  } catch (err) {
+    console.error("   Error:", err.message);
+  }
+
+  // PHASE 2: Non-existent User (Security check - must not expose user existence)
+  try {
+    console.log("PHASE 2: Testing Login with non-existent email...");
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "non-existent-user@example.com",
+        password: password
+      })
+    });
+    const data = await res.json();
+    console.log(`   Status: ${res.status}`);
+    console.log(`   Response:`, JSON.stringify(data, null, 2));
+    if (res.status === 401 && data.error.code === "INVALID_CREDENTIALS") {
+      console.log("   ✅ Success: Returned 401 INVALID_CREDENTIALS (generic error)\n");
+    } else {
+      console.log("   ❌ Fail: Unexpected response\n");
+    }
+  } catch (err) {
+    console.error("   Error:", err.message);
+  }
+
+  // PHASE 3: Wrong Password
+  try {
+    console.log("PHASE 3: Testing Login with wrong password...");
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        password: "IncorrectPassword123"
+      })
+    });
+    const data = await res.json();
+    console.log(`   Status: ${res.status}`);
+    console.log(`   Response:`, JSON.stringify(data, null, 2));
+    if (res.status === 401 && data.error.code === "INVALID_CREDENTIALS") {
+      console.log("   ✅ Success: Returned 401 INVALID_CREDENTIALS\n");
+    } else {
+      console.log("   ❌ Fail: Unexpected response\n");
+    }
+  } catch (err) {
+    console.error("   Error:", err.message);
+  }
+
+  // PHASE 4: Valid Login (Correct credentials)
+  try {
+    console.log("PHASE 4: Testing Login with correct credentials...");
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: testEmail,
+        password: password
+      })
+    });
+    const data = await res.json();
+    console.log(`   Status: ${res.status}`);
+    console.log(`   Response:`, JSON.stringify(data, null, 2));
+    if (res.status === 200 && data.success && data.data.accessToken) {
+      console.log("   ✅ Success: Returned 200 OK with tokens!\n");
+    } else {
+      console.log("   ❌ Fail: Unexpected response\n");
+    }
   } catch (err) {
     console.error("   Error:", err.message);
   }
 }
 
-runTests();
+runLoginTests();
