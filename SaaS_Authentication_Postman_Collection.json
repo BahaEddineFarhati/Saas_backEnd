@@ -1,0 +1,306 @@
+{
+  "info": {
+    "_postman_id": "f5b61b2e-0a56-4c7b-bf08-8e6dcb022e96",
+    "name": "SaaS Backend Authentication",
+    "description": "Collection to test user registration, login, logout, token refresh, and the protected auth middleware.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User & Organisation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);",
+                  "}",
+                  "if (jsonData.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organisationName\": \"Acme Corp\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register a new user and organisation. Automatically extracts and sets accessToken and refreshToken collection variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success && jsonData.data) {",
+                  "    if (jsonData.data.accessToken) {",
+                  "        pm.collectionVariables.set(\"accessToken\", jsonData.data.accessToken);",
+                  "    }",
+                  "    if (jsonData.data.refreshToken) {",
+                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.data.refreshToken);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Log in with the registered user. Automatically extracts and sets accessToken and refreshToken collection variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success && jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", jsonData.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Refresh the access token using the stored refresh token. Automatically updates the accessToken collection variable."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Log out by invalidating the refresh token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Protected Routes",
+      "item": [
+        {
+          "name": "Protected Test - No Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/protected-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "protected-test"
+              ]
+            },
+            "description": "Access the protected test route without a token. Expecting 401 AUTH_NO_TOKEN."
+          },
+          "response": []
+        },
+        {
+          "name": "Protected Test - Malformed Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer abc123"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/protected-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "protected-test"
+              ]
+            },
+            "description": "Access the protected test route with a malformed token. Expecting 401 AUTH_TOKEN_INVALID."
+          },
+          "response": []
+        },
+        {
+          "name": "Protected Test - Bad Header Format",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "NotBearer abc123"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/protected-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "protected-test"
+              ]
+            },
+            "description": "Access the protected test route with a bad header format (not starting with Bearer). Expecting 401 AUTH_NO_TOKEN."
+          },
+          "response": []
+        },
+        {
+          "name": "Protected Test - Valid Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/protected-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "protected-test"
+              ]
+            },
+            "description": "Access the protected test route with the active valid access token. Expecting 200 SUCCESS."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

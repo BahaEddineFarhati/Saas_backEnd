@@ -3,21 +3,6 @@ import { AppError } from "@/utils/AppError";
 import { verifyAccessToken } from "@/utils/jwt";
 
 /**
- * Extends Express Request with authenticated user data.
- * Used after verifyAuthToken middleware successfully authenticates.
- */
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        type: "access" | "refresh";
-      };
-    }
-  }
-}
-
-/**
  * Middleware to verify access token from Authorization header.
  * Extracts token from "Bearer <token>" format.
  * Verifies token signature and type.
@@ -58,7 +43,11 @@ export const verifyAuthToken = (
   }
 
   // Attach user to request
-  req.user = payload;
+  req.user = {
+    userId: payload.userId,
+    organisationId: payload.organisationId || "",
+    role: payload.role || "",
+  };
 
   next();
 };
