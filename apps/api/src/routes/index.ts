@@ -4,10 +4,13 @@ import authRoutes from "@/routes/authRoutes";
 
 const router = Router();
 
+// Mount authentication routes under /auth
+router.use("/auth", authRoutes);
+
 /**
- * GET /api/v1
- * Root API v1 endpoint - confirms routing is working
- */
+  * GET /api/v1
+  * Root API v1 endpoint - confirms routing is working
+  */
 router.get(
   "/",
   catchAsync(async (_req, res: Response) => {
