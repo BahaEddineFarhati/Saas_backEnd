@@ -65,3 +65,10 @@ export interface LoginResponse {
 export interface RefreshTokenResponse {
   accessToken: string;
 }
+export interface RegisterInput {
+  organisationName: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password?: string;
+}

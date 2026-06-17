@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
 import {
@@ -6,7 +7,97 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
 } from "@/utils/jwt";
-import { LoginResponse, RefreshTokenResponse } from "@/types";
+import { LoginResponse, RefreshTokenResponse, RegisterInput } from "@/types";
+
+
+
+
+
+export const register = async (input: RegisterInput) => {
+  const { organisationName, firstName, lastName, email, password } = input;
+
+  // 1. Check if user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existingUser) {
+    throw new AppError("Email already taken", 409, "AUTH_EMAIL_TAKEN");
+  }
+
+  // 2. Hash password with bcrypt at 12 rounds
+  const passwordHash = await bcrypt.hash(password!, 12);
+
+  // 3. Generate initial slug from organisation name
+  let slug = organisationName
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!slug) slug = "org";
+
+  // 4. Run database operations atomically in a transaction
+  return await prisma.$transaction(async (tx) => {
+    // Ensure slug is unique within the transaction
+    let finalSlug = slug;
+    const existingOrg = await tx.organisation.findUnique({
+      where: { slug: finalSlug },
+    });
+    if (existingOrg) {
+      finalSlug = `${slug}-${crypto.randomBytes(3).toString("hex")}`;
+    }
+
+    // Create Organisation
+    const organisation = await tx.organisation.create({
+      data: {
+        name: organisationName,
+        slug: finalSlug,
+      },
+    });
+
+    // Create User as the first ADMIN of the Organisation
+    const user = await tx.user.create({
+      data: {
+        email,
+        firstName,
+        lastName,
+        passwordHash,
+        role: "ADMIN",
+        organisationId: organisation.id,
+      },
+    });
+
+    // Generate tokens
+    const accessToken = generateAccessToken(user.id);
+    const refreshToken = generateRefreshToken(user.id);
+
+    // Calculate refresh token expiration (7 days from now)
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Store refresh token in database
+    await tx.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        organisationId: user.organisationId,
+      },
+    };
+  });
+};
 
 
 

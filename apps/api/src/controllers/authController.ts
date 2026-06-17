@@ -1,6 +1,20 @@
 import { Request, Response } from "express";
-import { login, logout, refreshAccessToken } from "@/services/authService";
-import type { LoginResponse, RefreshTokenResponse } from "@/services/authService";
+import { catchAsync } from "@/utils/catchAsync";
+import * as authService from "@/services/authService";
+import type { LoginResponse, RefreshTokenResponse } from "@/types";
+
+
+
+
+
+export const register = catchAsync(async (req: Request, res: Response) => {
+  const validatedData = (req as any).validatedData || req.body;
+  const result = await authService.register(validatedData);
+  
+  // Return exactly the specified response structure
+  res.status(201).json(result);
+});
+
 
 /**
  * POST /api/v1/auth/login
@@ -32,7 +46,7 @@ import type { LoginResponse, RefreshTokenResponse } from "@/services/authService
  *   }
  * }
  */
-export const loginController = async (req: Request, res: Response): Promise<void> => {
+export const loginController = catchAsync(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   // Validate input
@@ -47,13 +61,13 @@ export const loginController = async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const result: LoginResponse = await login(email, password);
+  const result: LoginResponse = await authService.login(email, password);
 
   res.status(200).json({
     success: true,
     data: result,
   });
-};
+});
 
 /**
  * POST /api/v1/auth/logout
@@ -71,7 +85,7 @@ export const loginController = async (req: Request, res: Response): Promise<void
  *   "message": "Logged out successfully"
  * }
  */
-export const logoutController = async (req: Request, res: Response): Promise<void> => {
+export const logoutController = catchAsync(async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
 
   // Validate input
@@ -86,13 +100,13 @@ export const logoutController = async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  await logout(refreshToken);
+  await authService.logout(refreshToken);
 
   res.status(200).json({
     success: true,
     message: "Logged out successfully",
   });
-};
+});
 
 /**
  * POST /api/v1/auth/refresh
@@ -121,7 +135,7 @@ export const logoutController = async (req: Request, res: Response): Promise<voi
  *   }
  * }
  */
-export const refreshTokenController = async (req: Request, res: Response): Promise<void> => {
+export const refreshTokenController = catchAsync(async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
 
   // Validate input
@@ -136,10 +150,11 @@ export const refreshTokenController = async (req: Request, res: Response): Promi
     return;
   }
 
-  const result: RefreshTokenResponse = await refreshAccessToken(refreshToken);
+  const result: RefreshTokenResponse = await authService.refreshAccessToken(refreshToken);
 
   res.status(200).json({
     success: true,
     data: result,
   });
-};
+});
+
