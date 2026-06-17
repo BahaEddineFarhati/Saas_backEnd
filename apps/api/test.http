@@ -1,0 +1,104 @@
+# ─── Variables ────────────────────────────────────────────────────────────────
+@baseUrl = http://localhost:3001/api/v1
+
+# After login, paste the accessToken here
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbXFna2NyaWIwMDAycmR1NHh3YTA4NWNxIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4MTcwMjAyMCwiZXhwIjoxNzgxNzAyOTIwfQ.Z92qmobd3uqaSExqiGtgqyrQYHJ26udQ9UTFK6q7MTE
+@recruiterToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbXFna2NydGowMDA0cmR1NGl4bmRncHFrIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4MTcwMjA3OCwiZXhwIjoxNzgxNzAyOTc4fQ.pWdZWRrHYzxc-FHfTRKHU9CYTCxKGiBSv7OcyGnCkA0
+
+# ─── Health check ─────────────────────────────────────────────────────────────
+### Health
+GET http://localhost:3001/health
+
+# ─── Step 1: Login as ADMIN (copy accessToken → paste in @adminToken above) ───
+### Login ADMIN
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@acme.com",
+  "password": "Admin1234!"
+}
+
+# ─── Step 2: Login as RECRUITER (copy accessToken → paste in @recruiterToken) ─
+### Login RECRUITER
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "recruiter@acme.com",
+  "password": "Recruiter1234!"
+}
+
+# ─── Invite: ADMIN invites → 200 ──────────────────────────────────────────────
+### Invite as ADMIN (expect 200)
+POST {{baseUrl}}/auth/invite
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "maher.ayachi@etudiant-isi.utm.tn",
+  "role": "RECRUITER"
+}
+
+# ─── Invite: RECRUITER invites → 403 AUTH_FORBIDDEN ──────────────────────────
+### Invite as RECRUITER (expect 403)
+POST {{baseUrl}}/auth/invite
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "email": "someone@example.com",
+  "role": "RECRUITER"
+}
+
+# ─── Invite: existing member → 409 INVITE_ALREADY_MEMBER ─────────────────────
+### Invite existing member (expect 409)
+POST {{baseUrl}}/auth/invite
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "recruiter@acme.com",
+  "role": "RECRUITER"
+}
+
+# ─── Invite: no token → 401 ───────────────────────────────────────────────────
+### No auth header (expect 401)
+POST {{baseUrl}}/auth/invite
+Content-Type: application/json
+
+{
+  "email": "someone@example.com",
+  "role": "RECRUITER"
+}
+
+# ─── Register new organisation ────────────────────────────────────────────────
+### Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "organisationName": "Test Corp",
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@testcorp.com",
+  "password": "Password1!"
+}
+
+# ─── Logout ───────────────────────────────────────────────────────────────────
+### Logout (paste refreshToken from login response)
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "PASTE_REFRESH_TOKEN_HERE"
+}
+
+# ─── Refresh token ────────────────────────────────────────────────────────────
+### Refresh access token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "PASTE_REFRESH_TOKEN_HERE"
+}

@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
+import { randomUUID } from "crypto";
+import jwt from "jsonwebtoken";
+import { Role } from "@prisma/client";
 import { catchAsync } from "@/utils/catchAsync";
 import * as authService from "@/services/authService";
+import { prisma } from "@/lib/prisma";
+import { AppError } from "@/utils/AppError";
+import { sendInviteEmail } from "@/services/emailService";
 import type { LoginResponse, RefreshTokenResponse } from "@/types";
 
 
@@ -156,5 +162,52 @@ export const refreshTokenController = catchAsync(async (req: Request, res: Respo
     success: true,
     data: result,
   });
+});
+
+export const inviteTeamMember = catchAsync(async (req: Request, res: Response) => {
+  const { email, role } = req.body as { email?: string; role?: string };
+  const caller = req.caller!;
+
+  if (!email || typeof email !== "string") {
+    throw new AppError("email is required", 400, "VALIDATION_ERROR");
+  }
+  if (!role || !Object.values(Role).includes(role as Role)) {
+    throw new AppError(`role must be one of: ${Object.values(Role).join(", ")}`, 400, "VALIDATION_ERROR");
+  }
+
+  const existingMember = await prisma.user.findFirst({
+    where: { email, organisationId: caller.organisationId },
+  });
+  if (existingMember) {
+    throw new AppError("This email is already a member of your organisation", 409, "INVITE_ALREADY_MEMBER");
+  }
+
+  const token = jwt.sign(
+    { jti: randomUUID(), email, organisationId: caller.organisationId, role },
+    process.env.JWT_SECRET!,
+    { expiresIn: "48h" }
+  );
+
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
+  await prisma.inviteToken.create({
+    data: { token, email, organisationId: caller.organisationId, role: role as Role, expiresAt },
+  });
+
+  const organisation = await prisma.organisation.findUnique({
+    where: { id: caller.organisationId },
+    select: { name: true },
+  });
+
+  const inviteLink = `${process.env.FRONTEND_URL}/accept-invite?token=${token}`;
+
+  await sendInviteEmail({
+    to: email,
+    inviteLink,
+    organisationName: organisation!.name,
+    role,
+  });
+
+  res.status(200).json({ success: true, message: "Invitation sent successfully" });
 });
 

@@ -5,7 +5,10 @@ import {
   loginController,
   logoutController,
   refreshTokenController,
+  inviteTeamMember,
 } from "@/controllers/authController";
+import { verifyAuthToken } from "@/middleware/authMiddleware";
+import { requireRole } from "@/middleware/requireRole";
 import zod from "zod";
 import { AppError } from "@/utils/AppError";
 
@@ -69,5 +72,11 @@ router.post("/logout", catchAsync(logoutController));
  * Refresh access token using refresh token
  */
 router.post("/refresh", catchAsync(refreshTokenController));
+
+/**
+ * POST /api/v1/auth/invite
+ * ADMIN only — sends a signed 48h invite token by email
+ */
+router.post("/invite", verifyAuthToken, requireRole("ADMIN"), catchAsync(inviteTeamMember));
 
 export default router;
