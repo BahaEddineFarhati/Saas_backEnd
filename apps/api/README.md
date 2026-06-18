@@ -194,6 +194,29 @@ export const getUser = async (req, res) => {
 };
 ```
 
+
+### Start Redis (required before running the API)
+
+This project uses Redis for job queues via BullMQ. Start it with Docker:
+
+```bash
+docker compose up -d
+```
+
+To stop it:
+
+```bash
+docker compose down
+```
+
+> Redis will be available at `redis://localhost:6379`
+
+### Then start the API
+
+```bash
+npm run dev
+```
+
 ### Type Safety
 
 - No `any` types anywhere
@@ -218,6 +241,8 @@ export const register = catchAsync(async (req: any, res: any) => {
 ```
 
 ## Environment Variables
+
+
 
 ### Required Variables
 
@@ -313,6 +338,13 @@ To run in production:
 4. Start: `npm start`
 
 The compiled JavaScript in `dist/` is what gets executed. Make sure to rebuild after code changes.
+
+
+
+
+
+
+
 
 ## Support
 
