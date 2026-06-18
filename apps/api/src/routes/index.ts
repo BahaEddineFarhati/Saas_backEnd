@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
+import { auth } from "@/middleware/auth";
 import authRoutes from "@/routes/authRoutes";
 import jobRoutes from "@/routes/jobRoutes";
 
@@ -42,5 +43,6 @@ router.get(
  * PATCH /api/v1/jobs/:id/close
  */
 router.use("/jobs", jobRoutes);
+router.use("/auth", authRoutes);
 
 export default router;
