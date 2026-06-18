@@ -1,11 +1,15 @@
 import express, { Express, Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import { catchAsync } from "@/utils/catchAsync";
 import requestLogger from "@/middleware/requestLogger";
 import notFound from "@/middleware/notFound";
 import errorHandler from "@/middleware/errorHandler";
 import apiRoutes from "@/routes";
+import { queue } from "@/lib/queue";
 import type { HealthCheckResponse } from "@/types";
 
 /**
@@ -17,9 +21,10 @@ import type { HealthCheckResponse } from "@/types";
  * 3. Body parsing middleware
  * 4. Request logging
  * 5. Health check endpoint
- * 6. API routes
- * 7. 404 handler
- * 8. Global error handler
+ * 6. BullMQ board (development only)
+ * 7. API routes
+ * 8. 404 handler
+ * 9. Global error handler
  */
 export const createApp = (): Express => {
   const app = express();
@@ -60,6 +65,20 @@ export const createApp = (): Express => {
       });
     })
   );
+
+  // BullMQ Board — development only
+  if (process.env.NODE_ENV === "development") {
+    const serverAdapter = new ExpressAdapter();
+    serverAdapter.setBasePath("/admin/queues");
+
+    createBullBoard({
+      queues: [new BullMQAdapter(queue)],
+      serverAdapter,
+    });
+
+    app.use("/admin/queues", serverAdapter.getRouter());
+    console.log("🛠  BullMQ Board → http://localhost:3001/admin/queues");
+  }
 
   // API routes
   app.use("/api/v1", apiRoutes);

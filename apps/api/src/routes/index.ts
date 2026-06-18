@@ -20,12 +20,19 @@ router.get(
 );
 
 /**
- * Mount auth routes at /auth
- * POST /api/v1/auth/login
- * POST /api/v1/auth/logout
- * POST /api/v1/auth/refresh
+ * GET /api/v1/protected-test
+ * Protected route to verify auth middleware functionality
  */
-router.use("/auth", authRoutes);
+router.get(
+  "/protected-test",
+  auth,
+  catchAsync(async (req, res: Response) => {
+    res.status(200).json({
+      success: true,
+      user: req.user,
+    });
+  })
+);
 
 /**
  * Mount job routes at /jobs

@@ -9,16 +9,24 @@ import type { JwtPayload } from "jsonwebtoken";
 export interface TokenPayload {
   userId: string;
   type: "access" | "refresh";
+  organisationId?: string;
+  role?: string;
 }
 
 /**
  * Generates an access token with 15-minute expiration.
  * Used for authenticating API requests.
  */
-export const generateAccessToken = (userId: string): string => {
+export const generateAccessToken = (
+  userId: string,
+  organisationId: string,
+  role: string
+): string => {
   const config = getConfig();
   const payload: TokenPayload = {
     userId,
+    organisationId,
+    role,
     type: "access",
   };
 
@@ -63,6 +71,8 @@ export const verifyAccessToken = (token: string): TokenPayload | null => {
 
     return {
       userId: decoded.userId,
+      organisationId: decoded.organisationId,
+      role: decoded.role,
       type: "access",
     };
   } catch (error) {
