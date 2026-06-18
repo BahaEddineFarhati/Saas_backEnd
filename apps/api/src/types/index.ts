@@ -42,3 +42,45 @@ export interface HealthCheckResponse {
   timestamp: string;
   environment: string;
 }
+/**
+ * Response type for login endpoint.
+ * Contains both access and refresh tokens.
+ */
+export interface LoginResponse {
+  accessToken: string;
+  refreshToken: string;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    organisationId: string;
+  };
+}
+/**
+ * Response type for token refresh endpoint.
+ * Contains new access token.
+ */
+export interface RefreshTokenResponse {
+  accessToken: string;
+}
+export interface RegisterInput {
+  organisationName: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password?: string;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: string;
+        organisationId: string;
+        role: string;
+      };
+    }
+  }
+}
