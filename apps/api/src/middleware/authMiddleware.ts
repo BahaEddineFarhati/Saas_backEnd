@@ -13,7 +13,6 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        type: "access" | "refresh";
         organisationId: string;
         role: string;
       };

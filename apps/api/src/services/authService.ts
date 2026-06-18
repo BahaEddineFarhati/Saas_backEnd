@@ -69,7 +69,11 @@ export const register = async (input: RegisterInput) => {
     });
 
     // Generate tokens
-    const accessToken = generateAccessToken(user.id);
+    const accessToken = generateAccessToken(
+      user.id,
+      user.organisationId,
+      user.role
+    );
     const refreshToken = generateRefreshToken(user.id);
 
     // Calculate refresh token expiration (7 days from now)
@@ -129,7 +133,11 @@ export const login = async (
   }
 
   // Generate tokens
-  const accessToken = generateAccessToken(user.id);
+  const accessToken = generateAccessToken(
+    user.id,
+    user.organisationId,
+    user.role
+  );
   const refreshToken = generateRefreshToken(user.id);
 
   // Calculate refresh token expiration (7 days from now)
@@ -223,7 +231,11 @@ export const refreshAccessToken = async (
   }
 
   // Generate new access token
-  const newAccessToken = generateAccessToken(user.id);
+  const newAccessToken = generateAccessToken(
+    user.id,
+    user.organisationId,
+    user.role
+  );
 
   return {
     accessToken: newAccessToken,

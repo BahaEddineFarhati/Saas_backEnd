@@ -2,6 +2,12 @@ import { Request, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
 import * as jobService from "@/services/jobService";
 import { AppError } from "@/utils/AppError";
+import { validateUploadedFiles } from "@/lib/multer";
+import {
+  uploadFileToStorage,
+  getPublicFileUrl,
+} from "@/lib/supabaseStorage";
+import { prisma } from "@/lib/prisma";
 
 /**
  * POST /api/v1/jobs
@@ -197,3 +203,124 @@ export const closeJob = catchAsync(async (req: Request, res: Response) => {
     data: job,
   });
 });
+
+/**
+ * POST /api/v1/jobs/:jobId/candidates/upload
+ * Upload multiple candidate files (CVs in PDF or DOCX format)
+ * Validates files, stores them in object storage, and creates candidate records
+ *
+ * Request: multipart/form-data with 'files' field containing up to 100 files
+ * - Max 5MB per file
+ * - Allowed types: PDF, DOCX
+ *
+ * Response (202):
+ * {
+ *   "success": true,
+ *   "data": [
+ *     {
+ *       "id": "candidate_id",
+ *       "status": "PENDING",
+ *       "rawFileUrl": "https://..."
+ *     }
+ *   ]
+ * }
+ *
+ * Response (400) if validation fails
+ * Response (404) if job not found or doesn't belong to organisation
+ */
+export const uploadCandidates = catchAsync(
+  async (req: Request, res: Response) => {
+    const jobId = req.params.jobId;
+    const organisationId = req.user?.organisationId;
+    const files = req.files as Express.Multer.File[];
+
+    if (!organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    // Validate files
+    const validationErrors = validateUploadedFiles(files);
+    if (validationErrors.length > 0) {
+      throw new AppError(
+        `File validation failed: ${validationErrors
+          .map((e) => `${e.filename} - ${e.reason}`)
+          .join("; ")}`,
+        400,
+        "INVALID_FILES"
+      );
+    }
+
+    // Verify job exists and belongs to organisation
+    const job = await prisma.jobOpening.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    if (job.organisationId !== organisationId) {
+      throw new AppError(
+        "Job not found",
+        404,
+        "NOT_FOUND"
+      );
+    }
+
+    // Upload files and create candidate records
+    const createdCandidates: Array<{
+      id: string;
+      status: string;
+      rawFileUrl: string;
+    }> = [];
+
+    try {
+      for (const file of files) {
+        // Upload file to Supabase Storage
+        const { bucket, path } = await uploadFileToStorage(
+          file,
+          jobId
+        );
+
+        // Generate public URL
+        const rawFileUrl = getPublicFileUrl(bucket, path);
+
+        // Create candidate record with PENDING status
+        const candidate = await prisma.candidate.create({
+          data: {
+            firstName: "", // Will be populated during parsing
+            lastName: "",
+            email: "",
+            rawFileUrl,
+            status: "PENDING",
+            jobOpeningId: jobId,
+          },
+        });
+
+        createdCandidates.push({
+          id: candidate.id,
+          status: candidate.status,
+          rawFileUrl: candidate.rawFileUrl,
+        });
+      }
+
+      // Return 202 (Accepted) with created candidates
+      res.status(202).json({
+        success: true,
+        data: createdCandidates,
+      });
+    } catch (error) {
+      // Clean up any successfully created candidates if something fails
+      if (createdCandidates.length > 0) {
+        await prisma.candidate.deleteMany({
+          where: {
+            id: {
+              in: createdCandidates.map((c) => c.id),
+            },
+          },
+        });
+      }
+      throw error;
+    }
+  }
+);

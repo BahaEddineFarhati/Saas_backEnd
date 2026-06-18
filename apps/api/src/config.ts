@@ -11,6 +11,9 @@ interface Config {
   jwtRefreshSecret: string;
   frontendUrl: string;
   llmApiKey: string;
+  supabaseUrl: string;
+  supabaseKey: string;
+  supabaseBucket: string;
 }
 
 /**
@@ -22,6 +25,9 @@ const validateConfig = (): void => {
     "DATABASE_URL",
     "JWT_SECRET",
     "FRONTEND_URL",
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
+    "SUPABASE_BUCKET",
   ];
 
   const missingVars = requiredVars.filter((varName) => !process.env[varName]);
@@ -50,5 +56,8 @@ export const getConfig = (): Config => {
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!,
     frontendUrl: process.env.FRONTEND_URL!,
     llmApiKey: process.env.LLM_API_KEY || "",
+    supabaseUrl: process.env.SUPABASE_URL!,
+    supabaseKey: process.env.SUPABASE_KEY!,
+    supabaseBucket: process.env.SUPABASE_BUCKET!,
   };
 };

@@ -111,6 +111,7 @@ enum JobStatus {
 }
 
 enum CandidateStatus {
+  PENDING
   NEW
   SHORTLISTED
   REJECTED
