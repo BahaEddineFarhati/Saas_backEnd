@@ -1,11 +1,9 @@
 import { Router, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
 import authRoutes from "@/routes/authRoutes";
+import jobRoutes from "@/routes/jobRoutes";
 
 const router = Router();
-
-// Mount authentication routes under /auth
-router.use("/auth", authRoutes);
 
 /**
   * GET /api/v1
@@ -28,5 +26,14 @@ router.get(
  * POST /api/v1/auth/refresh
  */
 router.use("/auth", authRoutes);
+
+/**
+ * Mount job routes at /jobs
+ * POST /api/v1/jobs
+ * GET /api/v1/jobs
+ * GET /api/v1/jobs/:id
+ * PATCH /api/v1/jobs/:id/close
+ */
+router.use("/jobs", jobRoutes);
 
 export default router;
