@@ -1,6 +1,25 @@
 import { Request, Response, NextFunction } from "express";
 import { AppError } from "@/utils/AppError";
 import { verifyAccessToken } from "@/utils/jwt";
+import { prisma } from "@/lib/prisma";
+import { catchAsync } from "@/utils/catchAsync";
+
+/**
+ * Extends Express Request with authenticated user data.
+ * Used after verifyAuthToken middleware successfully authenticates.
+ */
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: string;
+        type: "access" | "refresh";
+        organisationId: string;
+        role: string;
+      };
+    }
+  }
+}
 
 /**
  * Middleware to verify access token from Authorization header.
@@ -12,11 +31,12 @@ import { verifyAccessToken } from "@/utils/jwt";
  *
  * Usage: router.get("/protected", verifyAuthToken, controller)
  */
-export const verifyAuthToken = (
-  req: Request,
-  _res: Response,
-  next: NextFunction
-) => {
+export const verifyAuthToken = catchAsync(
+  async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+  ) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -42,12 +62,26 @@ export const verifyAuthToken = (
     throw new AppError("Invalid or expired access token", 401, "INVALID_ACCESS_TOKEN");
   }
 
-  // Attach user to request
-  req.user = {
-    userId: payload.userId,
-    organisationId: payload.organisationId || "",
-    role: payload.role || "",
-  };
+  // Fetch user details from database
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: {
+      organisationId: true,
+      role: true,
+    },
+  });
 
-  next();
-};
+  if (!user) {
+    throw new AppError("User not found", 401, "USER_NOT_FOUND");
+  }
+
+    // Attach user to request
+    req.user = {
+      ...payload,
+      organisationId: user.organisationId,
+      role: user.role,
+    };
+
+    next();
+  }
+);
