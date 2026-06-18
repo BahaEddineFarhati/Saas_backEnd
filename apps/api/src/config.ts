@@ -11,6 +11,13 @@ interface Config {
   jwtRefreshSecret: string;
   frontendUrl: string;
   llmApiKey: string;
+  storage: {
+    endpoint: string;
+    accessKey: string;
+    secretKey: string;
+    bucket: string;
+    publicUrl: string;
+  };
 }
 
 /**
@@ -22,6 +29,10 @@ const validateConfig = (): void => {
     "DATABASE_URL",
     "JWT_SECRET",
     "FRONTEND_URL",
+    "STORAGE_ENDPOINT",
+    "STORAGE_ACCESS_KEY",
+    "STORAGE_SECRET_KEY",
+    "STORAGE_BUCKET",
   ];
 
   const missingVars = requiredVars.filter((varName) => !process.env[varName]);
@@ -50,5 +61,12 @@ export const getConfig = (): Config => {
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!,
     frontendUrl: process.env.FRONTEND_URL!,
     llmApiKey: process.env.LLM_API_KEY || "",
+    storage: {
+      endpoint: process.env.STORAGE_ENDPOINT!,
+      accessKey: process.env.STORAGE_ACCESS_KEY!,
+      secretKey: process.env.STORAGE_SECRET_KEY!,
+      bucket: process.env.STORAGE_BUCKET!,
+      publicUrl: (process.env.STORAGE_PUBLIC_URL ?? process.env.STORAGE_ENDPOINT!).replace(/\/$/, ""),
+    },
   };
 };
