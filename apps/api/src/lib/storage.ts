@@ -2,7 +2,9 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from "@aws-sdk/client-s3";
+import { Readable } from "stream";
 import { AppError } from "@/utils/AppError";
 
 const endpoint = process.env.STORAGE_ENDPOINT!;
@@ -49,6 +51,49 @@ export async function uploadFile(
       `Failed to upload file: ${err instanceof Error ? err.message : String(err)}`,
       500,
       "STORAGE_UPLOAD_FAILED"
+    );
+  }
+}
+
+/**
+ * Downloads a file from the storage bucket using its public URL.
+ * @returns The file contents as a Buffer.
+ */
+export async function downloadFile(url: string): Promise<Buffer> {
+  const prefix = `${publicBase}/${bucket}/`;
+
+  if (!url.startsWith(prefix)) {
+    throw new AppError(
+      `Invalid storage URL: expected URL starting with ${prefix}`,
+      400,
+      "STORAGE_INVALID_URL"
+    );
+  }
+
+  const key = url.slice(prefix.length);
+
+  try {
+    const response = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key })
+    );
+
+    if (!response.Body) {
+      throw new AppError("Empty response body from storage.", 500, "STORAGE_EMPTY_BODY");
+    }
+
+    const stream = response.Body as Readable;
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("end", () => resolve(Buffer.concat(chunks)));
+      stream.on("error", reject);
+    });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(
+      `Failed to download file: ${err instanceof Error ? err.message : String(err)}`,
+      500,
+      "STORAGE_DOWNLOAD_FAILED"
     );
   }
 }

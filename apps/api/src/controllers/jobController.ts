@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { CandidateStatus } from "@prisma/client";
 import { catchAsync } from "@/utils/catchAsync";
 import * as jobService from "@/services/jobService";
 import { AppError } from "@/utils/AppError";
@@ -8,6 +9,8 @@ import {
   type FileValidationError,
 } from "@/lib/multer";
 import { uploadFile } from "@/lib/storage";
+import { cvParsingQueue } from "@/lib/queue";
+import type { CvParsingJobData } from "@/workers/cvParser.worker";
 
 /**
  * POST /api/v1/jobs
@@ -289,16 +292,21 @@ export const uploadCandidates = catchAsync(
           file.mimetype
         );
 
-        // Create candidate record with PENDING status
         const candidate = await prisma.candidate.create({
           data: {
-            firstName: "", // Will be populated during parsing
-            lastName: "",
-            email: "",
             rawFileUrl,
-            status: "PENDING",
+            status: CandidateStatus.PENDING,
             jobOpeningId: jobId,
           },
+        });
+
+        const jobData: CvParsingJobData = {
+          candidateId: candidate.id,
+          fileUrl: rawFileUrl,
+        };
+
+        await cvParsingQueue.add("parse-cv", jobData, {
+          jobId: `parse-cv-${candidate.id}`,
         });
 
         createdCandidates.push({
