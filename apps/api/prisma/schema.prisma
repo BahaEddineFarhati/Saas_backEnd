@@ -64,13 +64,13 @@ model JobOpening {
 
 model Candidate {
   id            String   @id @default(cuid())
-  firstName     String
-  lastName      String
-  email         String
+  firstName     String?
+  lastName      String?
+  email         String?
   rawFileUrl    String
   parsedJson    Json?
   score         Float    @default(0)
-  status        CandidateStatus @default(NEW)
+  status        CandidateStatus @default(PENDING)
   jobOpeningId  String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -111,8 +111,11 @@ enum JobStatus {
 }
 
 enum CandidateStatus {
+  PENDING
   NEW
   SHORTLISTED
   REJECTED
   OFFERED
+  SCORED
+  FAILED
 }
