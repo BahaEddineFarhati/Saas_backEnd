@@ -4,10 +4,8 @@ import {
   getJobs,
   getJobById,
   closeJob,
-  uploadCandidates,
 } from "@/controllers/jobController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
-import { uploadMiddleware } from "@/lib/multer";
 
 const router = Router();
 
@@ -40,19 +38,5 @@ router.get("/:id", verifyAuthToken, getJobById);
  * Protected: requires authentication
  */
 router.patch("/:id/close", verifyAuthToken, closeJob);
-
-/**
- * POST /api/v1/jobs/:jobId/candidates/upload
- * Upload multiple candidate files (CVs)
- * Accepts up to 100 files, max 5MB each
- * Allowed types: PDF, DOCX
- * Protected: requires authentication
- */
-router.post(
-  "/:jobId/candidates/upload",
-  verifyAuthToken,
-  uploadMiddleware.array("files", 100),
-  uploadCandidates
-);
 
 export default router;
