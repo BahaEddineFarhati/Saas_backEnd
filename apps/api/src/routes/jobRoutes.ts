@@ -5,6 +5,8 @@ import {
   getJobById,
   closeJob,
   uploadCandidates,
+  getCandidates,
+  getCandidateById,
 } from "@/controllers/jobController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { uploadMiddleware } from "@/lib/multer";
@@ -54,5 +56,20 @@ router.post(
   uploadMiddleware.array("files", 100),
   uploadCandidates
 );
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates
+ * Get all candidates for a job opening with optional filtering and pagination
+ * Query params: status, page, limit
+ * Protected: requires authentication
+ */
+router.get("/:jobId/candidates", verifyAuthToken, getCandidates);
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates/:candidateId
+ * Get full details of a specific candidate including parsed CV data
+ * Protected: requires authentication
+ */
+router.get("/:jobId/candidates/:candidateId", verifyAuthToken, getCandidateById);
 
 export default router;

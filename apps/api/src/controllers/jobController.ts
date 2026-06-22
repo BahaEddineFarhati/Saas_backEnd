@@ -294,6 +294,9 @@ export const uploadCandidates = catchAsync(
 
         const candidate = await prisma.candidate.create({
           data: {
+            firstName: "",
+            lastName: "",
+            email: "",
             rawFileUrl,
             status: CandidateStatus.PENDING,
             jobOpeningId: jobId,
@@ -334,5 +337,196 @@ export const uploadCandidates = catchAsync(
       }
       throw error;
     }
+  }
+);
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates
+ * Get all candidates for a job opening with optional filtering and pagination
+ *
+ * Query parameters:
+ * - status: filter by status (PENDING, NEW, SHORTLISTED, REJECTED, OFFERED, SCORED, FAILED)
+ * - page: page number (default: 1)
+ * - limit: items per page (default: 10)
+ *
+ * Response (200):
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "candidates": [
+ *       {
+ *         "id": "candidate_id",
+ *         "firstName": "John",
+ *         "lastName": "Doe",
+ *         "email": "john@example.com",
+ *         "status": "PENDING",
+ *         "score": null,
+ *         "createdAt": "2026-06-22T10:00:00Z"
+ *       }
+ *     ],
+ *     "pagination": {
+ *       "page": 1,
+ *       "limit": 10,
+ *       "total": 45,
+ *       "pages": 5
+ *     }
+ *   }
+ * }
+ *
+ * Response (404) if job not found or doesn't belong to organisation
+ */
+export const getCandidates = catchAsync(async (req: Request, res: Response) => {
+  const jobId = req.params.jobId;
+  const organisationId = req.user?.organisationId;
+
+  if (!organisationId) {
+    throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+  }
+
+  // Verify job exists and belongs to organisation
+  const job = await prisma.jobOpening.findUnique({
+    where: { id: jobId },
+  });
+
+  if (!job) {
+    throw new AppError("Job not found", 404, "NOT_FOUND");
+  }
+
+  if (job.organisationId !== organisationId) {
+    throw new AppError("Job not found", 404, "NOT_FOUND");
+  }
+
+  // Parse query parameters
+  const status = req.query.status as string | undefined;
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
+
+  // Build query filter
+  const where: any = {
+    jobOpeningId: jobId,
+  };
+
+  if (status) {
+    // Validate status value
+    const validStatuses = [
+      "PENDING",
+      "NEW",
+      "SHORTLISTED",
+      "REJECTED",
+      "OFFERED",
+      "SCORED",
+      "FAILED",
+    ];
+    if (!validStatuses.includes(status)) {
+      throw new AppError(
+        `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        400,
+        "INVALID_STATUS"
+      );
+    }
+    where.status = status;
+  }
+
+  // Get total count for pagination
+  const total = await prisma.candidate.count({ where });
+
+  // Get paginated candidates
+  const candidates = await prisma.candidate.findMany({
+    where,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      status: true,
+      score: true,
+      createdAt: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    skip: (page - 1) * limit,
+    take: limit,
+  });
+
+  const pages = Math.ceil(total / limit);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      candidates,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages,
+      },
+    },
+  });
+});
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates/:candidateId
+ * Get full details of a single candidate including parsed CV data
+ *
+ * Response (200):
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "id": "candidate_id",
+ *     "firstName": "John",
+ *     "lastName": "Doe",
+ *     "email": "john@example.com",
+ *     "status": "SCORED",
+ *     "score": 0.85,
+ *     "rawFileUrl": "https://...",
+ *     "parsedJson": { ... },
+ *     "createdAt": "2026-06-22T10:00:00Z",
+ *     "updatedAt": "2026-06-22T11:00:00Z"
+ *   }
+ * }
+ *
+ * Response (404) if job or candidate not found, or doesn't belong to organisation
+ */
+export const getCandidateById = catchAsync(
+  async (req: Request, res: Response) => {
+    const jobId = req.params.jobId;
+    const candidateId = req.params.candidateId;
+    const organisationId = req.user?.organisationId;
+
+    if (!organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    // Verify job exists and belongs to organisation
+    const job = await prisma.jobOpening.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    if (job.organisationId !== organisationId) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    // Get candidate and verify it belongs to this job
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+    });
+
+    if (!candidate) {
+      throw new AppError("Candidate not found", 404, "NOT_FOUND");
+    }
+
+    if (candidate.jobOpeningId !== jobId) {
+      throw new AppError("Candidate not found", 404, "NOT_FOUND");
+    }
+
+    res.status(200).json({
+      success: true,
+      data: candidate,
+    });
   }
 );
