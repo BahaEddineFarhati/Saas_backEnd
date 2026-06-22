@@ -5,23 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { catchAsync } from "@/utils/catchAsync";
 
 /**
- * Extends Express Request with authenticated user data.
- * Used after verifyAuthToken middleware successfully authenticates.
- */
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        type: "access" | "refresh";
-        organisationId: string;
-        role: string;
-      };
-    }
-  }
-}
-
-/**
  * Middleware to verify access token from Authorization header.
  * Extracts token from "Bearer <token>" format.
  * Verifies token signature and type.
@@ -68,11 +51,16 @@ export const verifyAuthToken = catchAsync(
     select: {
       organisationId: true,
       role: true,
+      isActive: true,
     },
   });
 
   if (!user) {
     throw new AppError("User not found", 401, "USER_NOT_FOUND");
+  }
+
+  if (!user.isActive) {
+    throw new AppError("Account deactivated", 401, "ACCOUNT_DEACTIVATED");
   }
 
     // Attach user to request

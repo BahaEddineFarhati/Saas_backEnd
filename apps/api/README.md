@@ -40,6 +40,26 @@ npm run dev
 
 The server will start on `http://localhost:3001` and automatically reload on file changes.
 
+4. **Bootstrap the first organisation and admin account**
+
+   Public registration has been removed. The only way to create the first organisation
+   and admin account is through a database seed or manual insert:
+
+   ```bash
+   # Option A: Use the Prisma seed script
+   npx prisma db seed
+
+   # Option B: Manual insert via Prisma Studio
+   npx prisma studio
+   ```
+
+   Create an `Organisation` row, then create a `User` row with `role: ADMIN` and
+   `isActive: true` linked to that organisation. Subsequent users are added exclusively
+   through the admin invite flow inside the app.
+
+   > **Important**: There is no public registration endpoint. All new users must be
+   > invited by an existing admin from the Entreprise management page.
+
 ## Project Structure
 
 ```
@@ -156,7 +176,7 @@ HTTP Response
 
 ### Naming
 
-- Routes: kebab-case (`/api/v1/auth/register`)
+- Routes: kebab-case (`/api/v1/auth/login`)
 - Files: camelCase for utilities (`catchAsync.ts`), PascalCase for classes (`AppError.ts`)
 - Functions: camelCase (`createUser`, `validateEmail`)
 - Constants: UPPER_SNAKE_CASE (`JWT_SECRET`)
@@ -168,11 +188,11 @@ Use descriptive error codes for API responses:
 ```typescript
 // Controller
 try {
-  const user = await userService.register(body);
-  res.status(201).json({ success: true, data: user });
+  const result = await authService.login(email, password);
+  res.status(200).json({ success: true, data: result });
 } catch (error) {
   // Caught by errorHandler and formatted as:
-  // { success: false, error: { code: "EMAIL_EXISTS", message: "..." } }
+  // { success: false, error: { code: "INVALID_CREDENTIALS", message: "..." } }
 }
 ```
 
@@ -226,17 +246,17 @@ npm run dev
 
 ```typescript
 // ✅ Good
-export const register = catchAsync(
+export const getOrganisation = catchAsync(
   async (req: Request, res: Response): Promise<void> => {
-    const user = await userService.register(req.body);
-    res.status(201).json({ success: true, data: user });
+    const org = await organisationService.getOrganisation(req.user!.organisationId);
+    res.status(200).json({ success: true, data: org });
   }
 );
 
 // ❌ Bad
-export const register = catchAsync(async (req: any, res: any) => {
-  const user = await userService.register(req.body);
-  res.json(user);
+export const getOrganisation = catchAsync(async (req: any, res: any) => {
+  const org = await organisationService.getOrganisation(req.user.organisationId);
+  res.json(org);
 });
 ```
 
@@ -256,6 +276,13 @@ export const register = catchAsync(async (req: any, res: any) => {
 - `NODE_ENV` (default: `development`)
 - `JWT_REFRESH_SECRET` (defaults to `JWT_SECRET`)
 - `LLM_API_KEY` - API key for LLM service
+- `SMTP_HOST` - SMTP server for invite emails
+- `SMTP_PORT` (default: `587`)
+- `SMTP_USER` - SMTP auth username
+- `SMTP_PASS` - SMTP auth password
+- `SMTP_FROM` (default: `LinkUp <noreply@linkup.com>`)
+
+> If SMTP variables are not set, invite links are printed to the server console instead (useful during development).
 
 All required variables are validated at startup. If any are missing, the server logs a clear error and exits immediately.
 
