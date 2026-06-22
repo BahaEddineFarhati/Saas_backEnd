@@ -346,6 +346,77 @@ The compiled JavaScript in `dist/` is what gets executed. Make sure to rebuild a
 
 
 
+## File Storage
+
+CV files are stored in a Cloudflare R2 bucket (or any S3-compatible provider such as MinIO or AWS S3).
+
+### Setting up Cloudflare R2
+
+1. **Create a Cloudflare account** at [cloudflare.com](https://cloudflare.com) and enable R2 from the dashboard.
+
+2. **Create a bucket** named `cv-files`:
+   - Dashboard → R2 Object Storage → Create bucket
+   - Name: `cv-files`
+
+3. **Enable public access** (required so uploaded URLs can be opened in a browser):
+   - Open the bucket → Settings → Public access
+   - Enable "R2.dev subdomain" — Cloudflare shows you a URL like `https://pub-xxxx.r2.dev`
+   - Alternatively, add a custom domain under the same settings tab.
+
+4. **Create API credentials**:
+   - Dashboard → R2 → Manage R2 API tokens → Create API token
+   - Permissions: Object Read & Write on bucket `cv-files`
+   - Copy the **Access Key ID** and **Secret Access Key**.
+
+5. **Find your Account ID**:
+   - Top-right of the Cloudflare dashboard, or the R2 overview page.
+
+6. **Set environment variables** in `.env`:
+
+```env
+STORAGE_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+STORAGE_ACCESS_KEY=<access_key_id>
+STORAGE_SECRET_KEY=<secret_access_key>
+STORAGE_BUCKET=cv-files
+STORAGE_PUBLIC_URL=https://pub-xxxx.r2.dev   # from step 3
+```
+
+> `STORAGE_PUBLIC_URL` is the base URL returned by `uploadFile`. It defaults to `STORAGE_ENDPOINT` if not set, which works for local MinIO but **not** for R2 (the API endpoint requires auth). Always set it when using R2.
+
+### Setting up MinIO (local development)
+
+```bash
+docker run -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
+```
+
+Then open `http://localhost:9001`, create a bucket named `cv-files`, and set its access policy to **public**.
+
+```env
+STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_ACCESS_KEY=minioadmin
+STORAGE_SECRET_KEY=minioadmin
+STORAGE_BUCKET=cv-files
+# STORAGE_PUBLIC_URL not needed — defaults to STORAGE_ENDPOINT
+```
+
+### Storage API (`src/lib/storage.ts`)
+
+```typescript
+import { uploadFile, deleteFile } from "@/lib/storage";
+
+// Upload
+const url = await uploadFile(buffer, "resume.pdf", "application/pdf");
+// → "https://pub-xxxx.r2.dev/cv-files/resume.pdf"
+
+// Delete
+await deleteFile(url);
+```
+
+Both functions throw an `AppError` on failure — errors are caught by the global error handler automatically.
+
 ## Support
 
 For questions or issues, refer to:
