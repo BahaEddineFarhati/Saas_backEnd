@@ -82,7 +82,11 @@ export const sendInviteEmail = async (params: InviteEmailParams): Promise<void> 
       return;
     } catch (error) {
       console.error("❌ Failed to send email via Brevo API:", error);
-      throw error;
+      console.warn(
+        `[emailService] API failed. Falling back to console logging.\n` +
+          `  Invite link for ${to}: ${inviteLink}`
+      );
+      return;
     }
   }
 
@@ -101,7 +105,11 @@ export const sendInviteEmail = async (params: InviteEmailParams): Promise<void> 
       return;
     } catch (error) {
       console.error("❌ Failed to send email via SMTP:", error);
-      throw error;
+      console.warn(
+        `[emailService] SMTP failed. Falling back to console logging.\n` +
+          `  Invite link for ${to}: ${inviteLink}`
+      );
+      return;
     }
   }
 
