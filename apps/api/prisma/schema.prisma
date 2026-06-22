@@ -20,7 +20,7 @@ model Organisation {
 
   users        User[]
   jobOpenings  JobOpening[]
-  invites      Invite[]
+  inviteTokens InviteToken[]
 
   @@map("organisations")
 }
@@ -40,7 +40,6 @@ model User {
   organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   jobOpenings    JobOpening[] @relation("CreatedBy")
   refreshTokens  RefreshToken[]
-  invitesSent    Invite[]     @relation("InvitedBy")
 
   @@index([email])
   @@index([organisationId])
@@ -96,23 +95,21 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-model Invite {
-  id              String    @id @default(cuid())
-  email           String
-  role            Role      @default(RECRUITER)
-  token           String    @unique
-  organisationId  String
-  invitedById     String
-  expiresAt       DateTime
-  acceptedAt      DateTime?
-  createdAt       DateTime  @default(now())
+model InviteToken {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  email          String
+  organisationId String
+  role           Role
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
 
-  organisation    Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  invitedBy       User         @relation("InvitedBy", fields: [invitedById], references: [id])
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
-  @@index([token])
+  @@index([email])
   @@index([organisationId])
-  @@map("invites")
+  @@map("invite_tokens")
 }
 
 enum Plan {

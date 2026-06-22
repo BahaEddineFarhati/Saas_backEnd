@@ -1,7 +1,8 @@
-import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
-import { sendInviteEmail } from "@/utils/email";
+import { sendInviteEmail } from "@/services/emailService";
 
 /**
  * Returns the organisation's details.
@@ -90,9 +91,11 @@ export const updateOrganisation = async (
 };
 
 /**
- * Returns all users belonging to the given organisation.
+ * Returns all users belonging to the given organisation,
+ * plus any pending (unused, non-expired) invites as "virtual" members.
  */
 export const getMembers = async (organisationId: string) => {
+  // Fetch real users
   const members = await prisma.user.findMany({
     where: { organisationId },
     select: {
@@ -107,7 +110,41 @@ export const getMembers = async (organisationId: string) => {
     orderBy: { createdAt: "asc" },
   });
 
-  return members;
+  // Fetch pending invites (not used, not expired)
+  const pendingInvites = await prisma.inviteToken.findMany({
+    where: {
+      organisationId,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      createdAt: true,
+      expiresAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Convert pending invites to member-like objects
+  const pendingMembers = pendingInvites.map((invite) => ({
+    id: invite.id,
+    firstName: "",
+    lastName: "",
+    email: invite.email,
+    role: invite.role,
+    isActive: false,
+    isPending: true,
+    createdAt: invite.createdAt,
+    expiresAt: invite.expiresAt,
+  }));
+
+  // Return real members + pending invites
+  return {
+    members,
+    pendingInvites: pendingMembers,
+  };
 };
 
 /**
@@ -222,13 +259,14 @@ export const deactivateMember = async (
 };
 
 /**
- * Creates an invite and sends an email to the invitee.
+ * Creates a JWT-signed invite token and sends an email via Brevo.
+ * Uses the same pattern as SCRUM-5: JWT containing { email, organisationId, role }.
  */
 export const createInvite = async (
   organisationId: string,
   email: string,
   role: "ADMIN" | "RECRUITER",
-  invitedById: string
+  _invitedById: string
 ) => {
   // Validate email format
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -236,24 +274,24 @@ export const createInvite = async (
   }
 
   // Check if user with this email already exists in the organisation
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
+  const existingUser = await prisma.user.findFirst({
+    where: { email, organisationId },
   });
 
   if (existingUser) {
     throw new AppError(
-      "A user with this email already exists",
+      "This email is already a member of your organisation",
       409,
-      "EMAIL_ALREADY_EXISTS"
+      "INVITE_ALREADY_MEMBER"
     );
   }
 
   // Check for existing pending invite
-  const existingInvite = await prisma.invite.findFirst({
+  const existingInvite = await prisma.inviteToken.findFirst({
     where: {
       email,
       organisationId,
-      acceptedAt: null,
+      usedAt: null,
       expiresAt: { gt: new Date() },
     },
   });
@@ -266,9 +304,14 @@ export const createInvite = async (
     );
   }
 
-  // Generate a secure invite token
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  // Generate a signed JWT invite token (48h expiry)
+  const token = jwt.sign(
+    { jti: randomUUID(), email, organisationId, role },
+    process.env.JWT_SECRET!,
+    { expiresIn: "48h" }
+  );
+
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
   // Get organisation name for the email
   const org = await prisma.organisation.findUnique({
@@ -280,14 +323,13 @@ export const createInvite = async (
     throw new AppError("Organisation not found", 404, "ORG_NOT_FOUND");
   }
 
-  // Create the invite
-  const invite = await prisma.invite.create({
+  // Store the invite token in the database
+  const invite = await prisma.inviteToken.create({
     data: {
-      email,
-      role,
       token,
+      email,
       organisationId,
-      invitedById,
+      role,
       expiresAt,
     },
     select: {
@@ -299,8 +341,16 @@ export const createInvite = async (
     },
   });
 
-  // Send the invite email
-  await sendInviteEmail(email, token, org.name);
+  // Build the invite link and send the email
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const inviteLink = `${frontendUrl}/accept-invite?token=${token}`;
+
+  await sendInviteEmail({
+    to: email,
+    inviteLink,
+    organisationName: org.name,
+    role,
+  });
 
   return invite;
 };

@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
 import {
@@ -155,7 +156,7 @@ export const refreshAccessToken = async (
 
 /**
  * Accept an invite and create a new user account.
- * Validates the invite token, creates the user, and returns tokens.
+ * Verifies the JWT invite token, creates the user, and returns auth tokens.
  */
 export const acceptInvite = async (input: {
   token: string;
@@ -165,8 +166,16 @@ export const acceptInvite = async (input: {
 }) => {
   const { token, firstName, lastName, password } = input;
 
-  // Find the invite
-  const invite = await prisma.invite.findUnique({
+  // Verify the JWT token
+  let decoded: { email: string; organisationId: string; role: string };
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET!) as typeof decoded;
+  } catch {
+    throw new AppError("Invalid or expired invitation link", 400, "INVALID_INVITE");
+  }
+
+  // Find the invite record in the database
+  const invite = await prisma.inviteToken.findUnique({
     where: { token },
     include: { organisation: true },
   });
@@ -175,7 +184,7 @@ export const acceptInvite = async (input: {
     throw new AppError("Invalid or expired invitation", 400, "INVALID_INVITE");
   }
 
-  if (invite.acceptedAt) {
+  if (invite.usedAt) {
     throw new AppError("This invitation has already been accepted", 400, "INVITE_ALREADY_ACCEPTED");
   }
 
@@ -185,7 +194,7 @@ export const acceptInvite = async (input: {
 
   // Check if user with this email already exists
   const existingUser = await prisma.user.findUnique({
-    where: { email: invite.email },
+    where: { email: decoded.email },
   });
 
   if (existingUser) {
@@ -195,24 +204,24 @@ export const acceptInvite = async (input: {
   // Hash password
   const passwordHash = await bcrypt.hash(password, 12);
 
-  // Create user and mark invite as accepted in a transaction
+  // Create user and mark invite as used in a transaction
   return await prisma.$transaction(async (tx) => {
     // Create the user
     const user = await tx.user.create({
       data: {
-        email: invite.email,
+        email: decoded.email,
         firstName,
         lastName,
         passwordHash,
-        role: invite.role,
-        organisationId: invite.organisationId,
+        role: decoded.role as "ADMIN" | "RECRUITER",
+        organisationId: decoded.organisationId,
       },
     });
 
-    // Mark invite as accepted
-    await tx.invite.update({
+    // Mark invite as used
+    await tx.inviteToken.update({
       where: { id: invite.id },
-      data: { acceptedAt: new Date() },
+      data: { usedAt: new Date() },
     });
 
     // Generate tokens
