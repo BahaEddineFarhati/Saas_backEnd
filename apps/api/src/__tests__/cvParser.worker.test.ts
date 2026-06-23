@@ -17,9 +17,12 @@ jest.mock("bullmq", () => ({
   Queue: jest.fn().mockImplementation((name: string) => ({ name })),
   QueueEvents: jest.fn().mockImplementation((name: string) => ({ name })),
 }));
-jest.mock("pdf-parse", () =>
-  jest.fn().mockResolvedValue({ text: "mock pdf text" })
-);
+jest.mock("pdf-parse", () => ({
+  PDFParse: jest.fn().mockImplementation(() => ({
+    getText: jest.fn().mockResolvedValue({ text: "mock pdf text" }),
+    destroy: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
 jest.mock("mammoth", () => ({
   extractRawText: jest.fn().mockResolvedValue({ value: "mock docx text" }),
 }));
