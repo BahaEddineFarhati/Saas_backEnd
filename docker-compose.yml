@@ -1,5 +1,23 @@
 # docker-compose.yml
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: linkup_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d linkup_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -44,5 +62,7 @@ services:
     restart: "no"
 
 volumes:
+  postgres_data:
+    driver: local
   minio_data:
     driver: local
