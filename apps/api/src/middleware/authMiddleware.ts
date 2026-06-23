@@ -5,6 +5,22 @@ import { prisma } from "@/lib/prisma";
 import { catchAsync } from "@/utils/catchAsync";
 
 /**
+ * Extends Express Request with authenticated user data.
+ * Used after verifyAuthToken middleware successfully authenticates.
+ */
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: string;
+        organisationId: string;
+        role: string;
+      };
+    }
+  }
+}
+
+/**
  * Middleware to verify access token from Authorization header.
  * Extracts token from "Bearer <token>" format.
  * Verifies token signature and type.

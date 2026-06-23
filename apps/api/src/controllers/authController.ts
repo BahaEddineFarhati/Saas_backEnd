@@ -210,6 +210,11 @@ export const acceptInviteController = catchAsync(async (req: Request, res: Respo
  * Retrieves current authenticated user details from DB.
  */
 export const meController = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: { message: "Not authenticated", code: "NOT_AUTHENTICATED" } });
+    return;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: req.user.userId },
     select: {

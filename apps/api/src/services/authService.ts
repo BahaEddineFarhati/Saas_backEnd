@@ -44,7 +44,6 @@ export const login = async (
     throw new AppError("Invalid email or password", 401, "INVALID_CREDENTIALS");
   }
 
-  // Generate tokens
   const accessToken = generateAccessToken(user.id, user.organisationId, user.role);
   const refreshToken = generateRefreshToken(user.id);
 
@@ -137,7 +136,6 @@ export const refreshAccessToken = async (
   if (!user) {
     throw new AppError("User not found", 401, "USER_NOT_FOUND");
   }
-
   if (!user.isActive) {
     // Revoke the refresh token for deactivated users
     await prisma.refreshToken.delete({

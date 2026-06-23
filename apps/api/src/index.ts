@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { createApp } from "@/app";
 import { getConfig } from "@/config";
+import { startCvParsingWorker } from "@/workers/cvParser.worker";
 
 /**
  * Entry point for the application.
@@ -16,6 +17,9 @@ const main = async (): Promise<void> => {
 
     // Create Express app
     const app = createApp();
+
+    // Start the CV parsing worker
+    startCvParsingWorker();
 
     // Start the server
     app.listen(config.port, () => {

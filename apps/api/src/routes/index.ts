@@ -3,7 +3,7 @@ import { catchAsync } from "@/utils/catchAsync";
 import authRoutes from "@/routes/authRoutes";
 import jobRoutes from "@/routes/jobRoutes";
 import organisationRoutes from "@/routes/organisationRoutes";
-import { auth } from "@/middleware/auth";
+import { verifyAuthToken } from "@/middleware/authMiddleware";
 
 const router = Router();
 
@@ -22,21 +22,12 @@ router.get(
 );
 
 /**
- * Mount auth routes at /auth
- * POST /api/v1/auth/login
- * POST /api/v1/auth/logout
- * POST /api/v1/auth/refresh
- * POST /api/v1/auth/accept-invite
- */
-router.use("/auth", authRoutes);
-
-/**
  * GET /api/v1/protected-test
  * Protected route to verify auth middleware functionality
  */
 router.get(
   "/protected-test",
-  auth,
+  verifyAuthToken,
   catchAsync(async (req, res: Response) => {
     res.status(200).json({
       success: true,
@@ -44,6 +35,15 @@ router.get(
     });
   })
 );
+
+/**
+ * Mount auth routes at /auth
+ * POST /api/v1/auth/login
+ * POST /api/v1/auth/logout
+ * POST /api/v1/auth/refresh
+ * POST /api/v1/auth/accept-invite
+ */
+router.use("/auth", authRoutes);
 
 /**
  * Mount job routes at /jobs

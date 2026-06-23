@@ -9,7 +9,7 @@ import requestLogger from "@/middleware/requestLogger";
 import notFound from "@/middleware/notFound";
 import errorHandler from "@/middleware/errorHandler";
 import apiRoutes from "@/routes";
-import { queue } from "@/lib/queue";
+import { cvParsingQueue } from "@/lib/queue";
 import type { HealthCheckResponse } from "@/types";
 
 /**
@@ -72,7 +72,7 @@ export const createApp = (): Express => {
     serverAdapter.setBasePath("/admin/queues");
 
     createBullBoard({
-      queues: [new BullMQAdapter(queue)],
+      queues: [new BullMQAdapter(cvParsingQueue)],
       serverAdapter,
     });
 
