@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
 import * as authService from "@/services/authService";
 import type { LoginResponse, RefreshTokenResponse } from "@/types";
+import { prisma } from "@/lib/prisma";
 
 
 /**
@@ -201,5 +202,49 @@ export const acceptInviteController = catchAsync(async (req: Request, res: Respo
   res.status(201).json({
     success: true,
     data: result,
+  });
+});
+
+/**
+ * GET /api/v1/auth/me
+ * Retrieves current authenticated user details from DB.
+ */
+export const meController = catchAsync(async (req: Request, res: Response) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.userId },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      organisationId: true,
+    },
+  });
+
+  if (!user) {
+    res.status(401).json({
+      success: false,
+      error: {
+        message: "User not found",
+        code: "USER_NOT_FOUND",
+      },
+    });
+    return;
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fullName: `${user.firstName} ${user.lastName}`,
+        role: user.role,
+        organisationId: user.organisationId,
+      },
+    },
   });
 });

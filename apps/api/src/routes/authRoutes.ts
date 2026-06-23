@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { catchAsync } from "@/utils/catchAsync";
+import { verifyAuthToken } from "@/middleware/authMiddleware";
 import {
   loginController,
   logoutController,
   refreshTokenController,
   acceptInviteController,
+  meController,
 } from "@/controllers/authController";
 
 const router = Router();
@@ -33,5 +35,11 @@ router.post("/refresh", catchAsync(refreshTokenController));
  * Accept an invite and create a user account (public, no auth required)
  */
 router.post("/accept-invite", catchAsync(acceptInviteController));
+
+/**
+ * GET /api/v1/auth/me
+ * Get current authenticated user's profile and latest role
+ */
+router.get("/me", verifyAuthToken, catchAsync(meController));
 
 export default router;
