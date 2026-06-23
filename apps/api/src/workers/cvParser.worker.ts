@@ -7,9 +7,11 @@ import { downloadFile } from "@/lib/storage";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
 
-// pdf-parse ships as CJS; use require to avoid ESM interop issues
+// pdf-parse v2 exports a class; use require for CJS interop
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+const { PDFParse } = require("pdf-parse") as {
+  PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }>; destroy(): Promise<void> };
+};
 
 export interface CvParsingJobData {
   candidateId: string;
@@ -46,7 +48,9 @@ async function extractText(fileBuffer: Buffer, fileUrl: string): Promise<string>
     return result.value;
   }
 
-  const result = await pdfParse(fileBuffer);
+  const parser = new PDFParse({ data: fileBuffer });
+  const result = await parser.getText();
+  await parser.destroy();
   return result.text;
 }
 
