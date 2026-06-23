@@ -1,55 +1,15 @@
-import { NextFunction, Router, Request, Response } from "express";
+import { Router } from "express";
 import { catchAsync } from "@/utils/catchAsync";
+import { verifyAuthToken } from "@/middleware/authMiddleware";
 import {
-  register,
   loginController,
   logoutController,
   refreshTokenController,
+  acceptInviteController,
+  meController,
 } from "@/controllers/authController";
-import zod from "zod";
-import { AppError } from "@/utils/AppError";
 
 const router = Router();
-
-// Zod validation schema matching all criteria
-const registerSchema = zod.object({
-  organisationName: zod
-    .string({ message: "organisationName is required" })
-    .trim()
-    .min(1, "organisationName is required"),
-  firstName: zod
-    .string({ message: "firstName is required" })
-    .trim()
-    .min(1, "firstName is required"),
-  lastName: zod
-    .string({ message: "lastName is required" })
-    .trim()
-    .min(1, "lastName is required"),
-  email: zod
-    .string({ message: "email is required" })
-    .trim()
-    .min(1, "email is required")
-    .email("email must be a valid email format"),
-  password: zod
-    .string({ message: "password is required" })
-    .min(1, "password is required")
-    .min(8, "password must be at least 8 characters long")
-    .regex(/[A-Z]/, "password must contain at least one uppercase letter")
-    .regex(/[0-9]/, "password must contain at least one number"),
-});
-
-// Middleware to run Zod validation and convert errors to AppError
-const validateRegister = (req: Request, _res: Response, next: NextFunction) => {
-  const result = registerSchema.safeParse(req.body);
-  if (!result.success) {
-    const firstError = result.error.issues[0];
-    return next(new AppError(firstError.message, 400, "VALIDATION_ERROR"));
-  }
-  (req as any).validatedData = result.data;
-  next();
-};
-
-router.post("/register", validateRegister, register);
 
 /**
  * POST /api/v1/auth/login
@@ -69,5 +29,17 @@ router.post("/logout", catchAsync(logoutController));
  * Refresh access token using refresh token
  */
 router.post("/refresh", catchAsync(refreshTokenController));
+
+/**
+ * POST /api/v1/auth/accept-invite
+ * Accept an invite and create a user account (public, no auth required)
+ */
+router.post("/accept-invite", catchAsync(acceptInviteController));
+
+/**
+ * GET /api/v1/auth/me
+ * Get current authenticated user's profile and latest role
+ */
+router.get("/me", verifyAuthToken, catchAsync(meController));
 
 export default router;

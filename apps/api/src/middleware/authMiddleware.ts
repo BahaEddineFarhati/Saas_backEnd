@@ -67,11 +67,16 @@ export const verifyAuthToken = catchAsync(
     select: {
       organisationId: true,
       role: true,
+      isActive: true,
     },
   });
 
   if (!user) {
     throw new AppError("User not found", 401, "USER_NOT_FOUND");
+  }
+
+  if (!user.isActive) {
+    throw new AppError("Account deactivated", 401, "ACCOUNT_DEACTIVATED");
   }
 
     // Attach user to request
