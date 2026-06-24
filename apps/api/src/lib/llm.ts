@@ -47,7 +47,7 @@ async function callCloud(prompt: string, systemPrompt: string): Promise<string> 
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      timeout: 120_000,
+      timeout: 360_000,
     }
   );
 
@@ -74,7 +74,7 @@ async function callLocal(prompt: string, systemPrompt: string): Promise<string> 
     body,
     {
       headers: { "Content-Type": "application/json" },
-      timeout: 120_000,
+      timeout: 360_000,
     }
   );
 
