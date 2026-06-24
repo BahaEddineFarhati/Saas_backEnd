@@ -18,11 +18,23 @@ export interface CvParsingJobData {
   fileUrl: string;
 }
 
+// Truncate to avoid slow/timeout inference on small local models
+const MAX_CV_CHARS = 5000;
+
 const CV_EXTRACTION_SYSTEM_PROMPT = `You are a CV parsing assistant. Extract structured information from the provided CV text.
 Return ONLY a valid JSON object with no markdown, no code blocks, no extra text.
 Use null for any field you cannot find — never hallucinate or invent data.`;
 
-const CV_EXTRACTION_PROMPT = (rawText: string) => `Extract the following fields from this CV and return a JSON object:
+const CV_EXTRACTION_PROMPT = (rawText: string) => {
+  const text = rawText.slice(0, MAX_CV_CHARS);
+  return `Extract the following fields from this CV and return a JSON object.
+
+IMPORTANT for name extraction:
+- The candidate's full name is usually the largest text at the top of the CV.
+- Split it into firstName (given name) and lastName (family name/surname).
+- If the name appears in ALL CAPS (e.g. "AYACHI Maher" or "SALEM TEBBINI"), still extract both parts correctly.
+- If only one name token is found, put it in lastName and leave firstName null.
+
 {
   "firstName": string | null,
   "lastName": string | null,
@@ -36,7 +48,8 @@ const CV_EXTRACTION_PROMPT = (rawText: string) => `Extract the following fields 
 }
 
 CV text:
-${rawText}`;
+${text}`;
+};
 
 async function extractText(fileBuffer: Buffer, fileUrl: string): Promise<string> {
   const isDocx =
@@ -55,12 +68,12 @@ async function extractText(fileBuffer: Buffer, fileUrl: string): Promise<string>
 }
 
 function extractJsonFromResponse(raw: string): Record<string, unknown> {
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/, "")
-    .trim();
-
-  return JSON.parse(cleaned) as Record<string, unknown>;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error("No JSON object found in LLM response");
+  }
+  return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
 }
 
 async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
