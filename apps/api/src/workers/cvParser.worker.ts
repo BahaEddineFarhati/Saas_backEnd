@@ -1,17 +1,11 @@
 import { Worker, Job } from "bullmq";
-import mammoth from "mammoth";
 import { CandidateStatus } from "@prisma/client";
 import { InputJsonValue } from "@prisma/client/runtime/library";
 import { redisConnection, CV_PARSING_QUEUE } from "@/lib/queue";
 import { downloadFile } from "@/lib/storage";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
-
-// pdf-parse v2 exports a class; use require for CJS interop
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { PDFParse } = require("pdf-parse") as {
-  PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }>; destroy(): Promise<void> };
-};
+import { extractText, ParsingQualityError } from "@/lib/extractText";
 
 export interface CvParsingJobData {
   candidateId: string;
@@ -51,21 +45,6 @@ CV text:
 ${text}`;
 };
 
-async function extractText(fileBuffer: Buffer, fileUrl: string): Promise<string> {
-  const isDocx =
-    fileUrl.toLowerCase().endsWith(".docx") ||
-    fileUrl.toLowerCase().includes(".docx");
-
-  if (isDocx) {
-    const result = await mammoth.extractRawText({ buffer: fileBuffer });
-    return result.value;
-  }
-
-  const parser = new PDFParse({ data: fileBuffer });
-  const result = await parser.getText();
-  await parser.destroy();
-  return result.text;
-}
 
 function extractJsonFromResponse(raw: string): Record<string, unknown> {
   const start = raw.indexOf("{");
@@ -108,9 +87,10 @@ export function startCvParsingWorker(): Worker<CvParsingJobData> {
       try {
         await processCvJob(job);
       } catch (err) {
+        const isQualityError = err instanceof ParsingQualityError;
         const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 3) - 1;
 
-        if (isLastAttempt) {
+        if (isQualityError || isLastAttempt) {
           await prisma.candidate.update({
             where: { id: job.data.candidateId },
             data: { status: CandidateStatus.FAILED },

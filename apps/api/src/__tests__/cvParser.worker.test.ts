@@ -17,20 +17,17 @@ jest.mock("bullmq", () => ({
   Queue: jest.fn().mockImplementation((name: string) => ({ name })),
   QueueEvents: jest.fn().mockImplementation((name: string) => ({ name })),
 }));
-jest.mock("pdf-parse", () => ({
-  PDFParse: jest.fn().mockImplementation(() => ({
-    getText: jest.fn().mockResolvedValue({ text: "mock pdf text" }),
-    destroy: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
-jest.mock("mammoth", () => ({
-  extractRawText: jest.fn().mockResolvedValue({ value: "mock docx text" }),
+jest.mock("@/lib/extractText", () => ({
+  extractText: jest.fn().mockResolvedValue("mock extracted text from CV"),
+  ParsingQualityError: class ParsingQualityError extends Error {
+    constructor(message: string) { super(message); this.name = "ParsingQualityError"; }
+  },
 }));
 
 import { downloadFile } from "@/lib/storage";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
-import mammoth from "mammoth";
+import { extractText, ParsingQualityError } from "@/lib/extractText";
 import { startCvParsingWorker } from "@/workers/cvParser.worker";
 
 const mockedDownload = downloadFile as jest.MockedFunction<typeof downloadFile>;
@@ -38,9 +35,7 @@ const mockedCallLLM = callLLM as jest.MockedFunction<typeof callLLM>;
 const mockedUpdate = prisma.candidate.update as jest.MockedFunction<
   typeof prisma.candidate.update
 >;
-const mockedMammoth = mammoth.extractRawText as jest.MockedFunction<
-  typeof mammoth.extractRawText
->;
+const mockedExtractText = extractText as jest.MockedFunction<typeof extractText>;
 
 const VALID_PARSED_JSON = JSON.stringify({
   firstName: "Jane",
@@ -72,6 +67,7 @@ describe("CV parsing worker — processor function", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedDownload.mockResolvedValue(Buffer.from("fake file"));
+    mockedExtractText.mockResolvedValue("mock extracted CV text");
     mockedCallLLM.mockResolvedValue(VALID_PARSED_JSON);
     mockedUpdate.mockResolvedValue({} as never);
 
@@ -119,14 +115,17 @@ describe("CV parsing worker — processor function", () => {
     );
   });
 
-  it("uses mammoth for .docx files", async () => {
+  it("calls extractText with the downloaded buffer and file URL", async () => {
+    const buf = Buffer.from("fake file");
+    mockedDownload.mockResolvedValue(buf);
+
     await processorFn({
       data: { candidateId: "cand-2", fileUrl: "http://storage/file.docx" },
       attemptsMade: 0,
       opts: { attempts: 3 },
     });
 
-    expect(mockedMammoth).toHaveBeenCalled();
+    expect(mockedExtractText).toHaveBeenCalledWith(buf, "http://storage/file.docx");
   });
 
   it("sets status to FAILED on the last retry attempt", async () => {
@@ -181,6 +180,27 @@ describe("CV parsing worker — processor function", () => {
     expect(mockedUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: CandidateStatus.SCORED }),
+      })
+    );
+  });
+
+  it("marks FAILED immediately on ParsingQualityError without waiting for last attempt", async () => {
+    mockedExtractText.mockRejectedValue(
+      new ParsingQualityError("Extracted text is too short (10 chars).")
+    );
+
+    await expect(
+      processorFn({
+        data: { candidateId: "cand-7", fileUrl: "http://storage/file.pdf" },
+        attemptsMade: 0, // first attempt — not last
+        opts: { attempts: 3 },
+      })
+    ).rejects.toThrow("Extracted text is too short");
+
+    expect(mockedUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "cand-7" },
+        data: { status: CandidateStatus.FAILED },
       })
     );
   });
