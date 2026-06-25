@@ -37,25 +37,33 @@ const mockedUpdate = prisma.candidate.update as jest.MockedFunction<
 >;
 const mockedExtractText = extractText as jest.MockedFunction<typeof extractText>;
 
-const VALID_PARSED_JSON = JSON.stringify({
+// Section-level JSON returned by each of the 4 LLM calls
+const PERSONAL_JSON = JSON.stringify({
   firstName: "Jane",
   lastName: "Doe",
   email: "jane@example.com",
   phone: "+1234567890",
   summary: "Senior developer",
+});
+const WORK_JSON = JSON.stringify({
   workExperience: [
-    {
-      company: "Acme",
-      title: "Dev",
-      startDate: "2020-01",
-      endDate: "2023-01",
-      description: "Worked on things",
-    },
+    { company: "Acme", title: "Dev", startDate: "2020-01", endDate: "2023-01", description: "Built things" },
   ],
-  education: [],
+});
+const EDUCATION_JSON = JSON.stringify({ education: [] });
+const SKILLS_JSON = JSON.stringify({
   skills: ["TypeScript", "Node.js"],
   languages: [{ language: "English", level: "Native" }],
 });
+
+/** Reset callLLM to return the 4 section responses in order */
+function mockFourCalls() {
+  mockedCallLLM
+    .mockResolvedValueOnce(PERSONAL_JSON)
+    .mockResolvedValueOnce(WORK_JSON)
+    .mockResolvedValueOnce(EDUCATION_JSON)
+    .mockResolvedValueOnce(SKILLS_JSON);
+}
 
 describe("CV parsing worker — processor function", () => {
   let processorFn: (job: {
@@ -68,20 +76,16 @@ describe("CV parsing worker — processor function", () => {
     jest.clearAllMocks();
     mockedDownload.mockResolvedValue(Buffer.from("fake file"));
     mockedExtractText.mockResolvedValue("mock extracted CV text");
-    mockedCallLLM.mockResolvedValue(VALID_PARSED_JSON);
     mockedUpdate.mockResolvedValue({} as never);
+    mockFourCalls();
 
-    // Capture the processor function passed to Worker constructor
-    const { Worker } = jest.requireMock("bullmq") as {
-      Worker: jest.Mock;
-    };
+    const { Worker } = jest.requireMock("bullmq") as { Worker: jest.Mock };
     Worker.mockImplementation(
       (_q: string, fn: typeof processorFn, _opts: unknown) => {
         processorFn = fn;
         return { on: jest.fn() };
       }
     );
-
     startCvParsingWorker();
   });
 
@@ -95,7 +99,17 @@ describe("CV parsing worker — processor function", () => {
     expect(mockedDownload).toHaveBeenCalledWith("http://storage/jobs/job1/file.pdf");
   });
 
-  it("sets status to SCORED and populates parsedJson on success", async () => {
+  it("makes exactly 4 LLM calls per job", async () => {
+    await processorFn({
+      data: { candidateId: "cand-1", fileUrl: "http://storage/file.pdf" },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    });
+
+    expect(mockedCallLLM).toHaveBeenCalledTimes(4);
+  });
+
+  it("sets status to SCORED and populates parsedJson with merged sections", async () => {
     await processorFn({
       data: { candidateId: "cand-1", fileUrl: "http://storage/file.pdf" },
       attemptsMade: 0,
@@ -115,6 +129,24 @@ describe("CV parsing worker — processor function", () => {
     );
   });
 
+  it("parsedJson contains fields from all 4 sections", async () => {
+    await processorFn({
+      data: { candidateId: "cand-1", fileUrl: "http://storage/file.pdf" },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    });
+
+    const call = mockedUpdate.mock.calls[0][0] as { data: { parsedJson: Record<string, unknown> } };
+    const pj = call.data.parsedJson;
+    expect(pj).toMatchObject({
+      firstName: "Jane",
+      workExperience: expect.any(Array),
+      education: expect.any(Array),
+      skills: expect.arrayContaining(["TypeScript"]),
+      languages: expect.any(Array),
+    });
+  });
+
   it("calls extractText with the downloaded buffer and file URL", async () => {
     const buf = Buffer.from("fake file");
     mockedDownload.mockResolvedValue(buf);
@@ -129,12 +161,13 @@ describe("CV parsing worker — processor function", () => {
   });
 
   it("sets status to FAILED on the last retry attempt", async () => {
+    mockedCallLLM.mockReset();
     mockedCallLLM.mockRejectedValue(new Error("LLM timeout"));
 
     await expect(
       processorFn({
         data: { candidateId: "cand-3", fileUrl: "http://storage/file.pdf" },
-        attemptsMade: 2, // 3rd attempt (0-indexed), which is attempts - 1
+        attemptsMade: 2,
         opts: { attempts: 3 },
       })
     ).rejects.toThrow("LLM timeout");
@@ -148,17 +181,17 @@ describe("CV parsing worker — processor function", () => {
   });
 
   it("does NOT set FAILED status on non-final retries", async () => {
+    mockedCallLLM.mockReset();
     mockedCallLLM.mockRejectedValue(new Error("transient error"));
 
     await expect(
       processorFn({
         data: { candidateId: "cand-4", fileUrl: "http://storage/file.pdf" },
-        attemptsMade: 0, // first attempt, not last
+        attemptsMade: 0,
         opts: { attempts: 3 },
       })
     ).rejects.toThrow("transient error");
 
-    // update should NOT have been called with FAILED
     const failedCall = mockedUpdate.mock.calls.find(
       ([arg]) =>
         (arg as { data: { status: string } }).data.status === CandidateStatus.FAILED
@@ -167,9 +200,11 @@ describe("CV parsing worker — processor function", () => {
   });
 
   it("handles LLM response wrapped in markdown code blocks", async () => {
-    mockedCallLLM.mockResolvedValue(
-      "```json\n" + VALID_PARSED_JSON + "\n```"
-    );
+    mockedCallLLM
+      .mockResolvedValueOnce("```json\n" + PERSONAL_JSON + "\n```")
+      .mockResolvedValueOnce("```json\n" + WORK_JSON + "\n```")
+      .mockResolvedValueOnce("```json\n" + EDUCATION_JSON + "\n```")
+      .mockResolvedValueOnce("```json\n" + SKILLS_JSON + "\n```");
 
     await processorFn({
       data: { candidateId: "cand-5", fileUrl: "http://storage/file.pdf" },
@@ -192,7 +227,7 @@ describe("CV parsing worker — processor function", () => {
     await expect(
       processorFn({
         data: { candidateId: "cand-7", fileUrl: "http://storage/file.pdf" },
-        attemptsMade: 0, // first attempt — not last
+        attemptsMade: 0,
         opts: { attempts: 3 },
       })
     ).rejects.toThrow("Extracted text is too short");
@@ -205,7 +240,8 @@ describe("CV parsing worker — processor function", () => {
     );
   });
 
-  it("throws and marks FAILED when LLM returns invalid JSON on last attempt", async () => {
+  it("throws and marks FAILED when a section LLM call returns invalid JSON on last attempt", async () => {
+    mockedCallLLM.mockReset();
     mockedCallLLM.mockResolvedValue("not json at all {{");
 
     await expect(
