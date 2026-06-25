@@ -7,7 +7,7 @@ import * as organisationService from "@/services/organisationService";
  * Returns the caller's organisation info (name, slug, plan, createdAt).
  */
 export const getOrganisation = catchAsync(async (req: Request, res: Response) => {
-  const org = await organisationService.getOrganisation(req.user!.organisationId);
+  const org = await organisationService.getOrganisation(req.user!.organisationId!);
 
   res.status(200).json({
     success: true,
@@ -34,7 +34,7 @@ export const updateOrganisation = catchAsync(async (req: Request, res: Response)
   }
 
   const updated = await organisationService.updateOrganisation(
-    req.user!.organisationId,
+    req.user!.organisationId!,
     { name, slug }
   );
 
@@ -49,7 +49,7 @@ export const updateOrganisation = catchAsync(async (req: Request, res: Response)
  * Returns all users belonging to the caller's organisation.
  */
 export const getMembers = catchAsync(async (req: Request, res: Response) => {
-  const members = await organisationService.getMembers(req.user!.organisationId);
+  const members = await organisationService.getMembers(req.user!.organisationId!);
 
   res.status(200).json({
     success: true,
@@ -77,7 +77,7 @@ export const updateMemberRole = catchAsync(async (req: Request, res: Response) =
   }
 
   const updated = await organisationService.updateMemberRole(
-    req.user!.organisationId,
+    req.user!.organisationId!,
     userId,
     role
   );
@@ -96,7 +96,7 @@ export const deactivateMember = catchAsync(async (req: Request, res: Response) =
   const { userId } = req.params;
 
   const result = await organisationService.deactivateMember(
-    req.user!.organisationId,
+    req.user!.organisationId!,
     userId,
     req.user!.userId
   );
@@ -128,7 +128,7 @@ export const inviteMember = catchAsync(async (req: Request, res: Response) => {
   const validRole = role && ["ADMIN", "RECRUITER"].includes(role) ? role : "RECRUITER";
 
   const invite = await organisationService.createInvite(
-    req.user!.organisationId,
+    req.user!.organisationId!,
     email,
     validRole,
     req.user!.userId

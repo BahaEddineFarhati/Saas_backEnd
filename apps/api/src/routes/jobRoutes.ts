@@ -9,6 +9,7 @@ import {
   getCandidateById,
 } from "@/controllers/jobController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
+import { blockSuperAdmin } from "@/middleware/blockSuperAdmin";
 import { uploadMiddleware } from "@/lib/multer";
 
 const router = Router();
@@ -18,7 +19,7 @@ const router = Router();
  * Create a new job opening
  * Protected: requires authentication
  */
-router.post("/", verifyAuthToken, createJob);
+router.post("/", verifyAuthToken, blockSuperAdmin, createJob);
 
 /**
  * GET /api/v1/jobs
@@ -26,14 +27,14 @@ router.post("/", verifyAuthToken, createJob);
  * Supports status filter and pagination
  * Protected: requires authentication
  */
-router.get("/", verifyAuthToken, getJobs);
+router.get("/", verifyAuthToken, blockSuperAdmin, getJobs);
 
 /**
  * GET /api/v1/jobs/:id
  * Get full details of a single job opening
  * Protected: requires authentication
  */
-router.get("/:id", verifyAuthToken, getJobById);
+router.get("/:id", verifyAuthToken, blockSuperAdmin, getJobById);
 
 /**
  * PATCH /api/v1/jobs/:id/close
@@ -41,7 +42,7 @@ router.get("/:id", verifyAuthToken, getJobById);
  * Only the creator or an ADMIN can close it
  * Protected: requires authentication
  */
-router.patch("/:id/close", verifyAuthToken, closeJob);
+router.patch("/:id/close", verifyAuthToken, blockSuperAdmin, closeJob);
 
 /**
  * POST /api/v1/jobs/:jobId/candidates/upload
@@ -53,6 +54,7 @@ router.patch("/:id/close", verifyAuthToken, closeJob);
 router.post(
   "/:jobId/candidates/upload",
   verifyAuthToken,
+  blockSuperAdmin,
   uploadMiddleware.array("files", 100),
   uploadCandidates
 );
@@ -63,13 +65,14 @@ router.post(
  * Query params: status, page, limit
  * Protected: requires authentication
  */
-router.get("/:jobId/candidates", verifyAuthToken, getCandidates);
+router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates);
 
 /**
  * GET /api/v1/jobs/:jobId/candidates/:candidateId
  * Get full details of a specific candidate including parsed CV data
  * Protected: requires authentication
  */
-router.get("/:jobId/candidates/:candidateId", verifyAuthToken, getCandidateById);
+router.get("/:jobId/candidates/:candidateId", verifyAuthToken, blockSuperAdmin, getCandidateById);
 
 export default router;
+

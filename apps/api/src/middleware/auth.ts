@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 interface DecodedToken {
   userId: string;
-  organisationId?: string;
+  organisationId?: string | null;
   role?: string;
   type: string;
 }
@@ -52,7 +52,7 @@ export const auth = async (req: Request, _res: Response, next: NextFunction) => 
     let role = decoded.role;
 
     // Fallback: If token was generated before the metadata was added to JWT, fetch from DB
-    if (!organisationId || !role) {
+    if (organisationId === undefined || !role) {
       const user = await prisma.user.findUnique({
         where: { id: userId },
       });
@@ -65,8 +65,8 @@ export const auth = async (req: Request, _res: Response, next: NextFunction) => 
 
     req.user = {
       userId,
-      organisationId,
-      role,
+      organisationId: organisationId ?? null,
+      role: role!,
     };
 
     next();

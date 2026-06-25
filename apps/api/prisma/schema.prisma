@@ -11,12 +11,14 @@ datasource db {
 }
 
 model Organisation {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  plan      Plan     @default(FREE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  plan        Plan      @default(FREE)
+  suspended   Boolean   @default(false)
+  suspendedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   users        User[]
   jobOpenings  JobOpening[]
@@ -33,11 +35,11 @@ model User {
   lastName        String
   role            Role     @default(RECRUITER)
   isActive        Boolean  @default(true)
-  organisationId  String
+  organisationId  String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
   jobOpenings    JobOpening[] @relation("CreatedBy")
   refreshTokens  RefreshToken[]
 
@@ -119,6 +121,7 @@ enum Plan {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   RECRUITER
 }

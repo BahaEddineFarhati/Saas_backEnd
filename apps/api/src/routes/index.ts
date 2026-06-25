@@ -3,7 +3,9 @@ import { catchAsync } from "@/utils/catchAsync";
 import authRoutes from "@/routes/authRoutes";
 import jobRoutes from "@/routes/jobRoutes";
 import organisationRoutes from "@/routes/organisationRoutes";
+import adminRoutes from "@/routes/adminRoutes";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
+import { requireSuperAdmin } from "@/middleware/requireSuperAdmin";
 
 const router = Router();
 
@@ -65,4 +67,11 @@ router.use("/jobs", jobRoutes);
  */
 router.use("/organisation", organisationRoutes);
 
+/**
+ * Mount super admin routes at /admin
+ * Protected: requires SUPER_ADMIN role
+ */
+router.use("/admin", verifyAuthToken, requireSuperAdmin, adminRoutes);
+
 export default router;
+

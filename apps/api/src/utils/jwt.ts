@@ -9,7 +9,7 @@ import type { JwtPayload } from "jsonwebtoken";
 export interface TokenPayload {
   userId: string;
   type: "access" | "refresh";
-  organisationId?: string;
+  organisationId?: string | null;
   role?: string;
 }
 
@@ -19,7 +19,7 @@ export interface TokenPayload {
  */
 export const generateAccessToken = (
   userId: string,
-  organisationId: string,
+  organisationId: string | null,
   role: string
 ): string => {
   const config = getConfig();
