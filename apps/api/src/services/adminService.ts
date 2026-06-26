@@ -1,30 +1,26 @@
-import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { AppError } from "@/utils/AppError";
+import { createInvite } from "@/services/organisationService";
 
-const SALT_ROUNDS = 12;
 const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
 
 /**
- * Create a new organisation with its admin user in a single transaction.
+ * Create a new organisation and send an invite to the first admin.
+ * No user is created here — the admin will complete their account
+ * via the accept-invite flow (same mechanism as regular member invites).
  */
 export const createOrganisation = async (input: {
   organisationName: string;
   slug: string;
-  adminFirstName: string;
-  adminLastName: string;
   adminEmail: string;
-  adminPassword: string;
 }) => {
-  const {
-    organisationName,
-    slug,
-    adminFirstName,
-    adminLastName,
-    adminEmail,
-    adminPassword,
-  } = input;
+  const { organisationName, slug, adminEmail } = input;
+
+  // Validate email format
+  if (!adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+    throw new AppError("A valid admin email is required", 400, "VALIDATION_ERROR");
+  }
 
   // Check if slug already exists
   const existingOrg = await prisma.organisation.findUnique({
@@ -34,7 +30,7 @@ export const createOrganisation = async (input: {
     throw new AppError("Organisation slug already taken", 409, "SLUG_TAKEN");
   }
 
-  // Check if email already exists
+  // Check if email already in use by another user
   const existingUser = await prisma.user.findUnique({
     where: { email: adminEmail },
   });
@@ -42,42 +38,25 @@ export const createOrganisation = async (input: {
     throw new AppError("Email already in use", 409, "EMAIL_TAKEN");
   }
 
-  const passwordHash = await bcrypt.hash(adminPassword, SALT_ROUNDS);
-
-  const result = await prisma.$transaction(async (tx) => {
-    const organisation = await tx.organisation.create({
-      data: {
-        name: organisationName,
-        slug,
-      },
-    });
-
-    const user = await tx.user.create({
-      data: {
-        email: adminEmail,
-        passwordHash,
-        firstName: adminFirstName,
-        lastName: adminLastName,
-        role: "ADMIN",
-        organisationId: organisation.id,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
-        organisationId: true,
-        createdAt: true,
-      },
-    });
-
-    return { organisation, user };
+  // Create the organisation (no user yet)
+  const organisation = await prisma.organisation.create({
+    data: {
+      name: organisationName,
+      slug,
+    },
   });
 
-  return result;
+  // Send an invite to the admin email using the existing invite mechanism.
+  // The invite uses role ADMIN so the first user gets admin privileges.
+  // We pass a dummy invitedById since this is a super-admin action.
+  const invite = await createInvite(
+    organisation.id,
+    adminEmail,
+    "ADMIN",
+    "super-admin"
+  );
+
+  return { organisation, invite };
 };
 
 /**

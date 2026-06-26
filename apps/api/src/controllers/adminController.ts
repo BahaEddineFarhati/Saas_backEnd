@@ -9,33 +9,20 @@ import * as adminService from "@/services/adminService";
  */
 export const createOrganisation = catchAsync(
   async (req: Request, res: Response) => {
-    const {
-      organisationName,
-      slug,
-      adminFirstName,
-      adminLastName,
-      adminEmail,
-      adminPassword,
-    } = req.body;
+    const { organisationName, slug, adminEmail } = req.body;
 
-    if (
-      !organisationName ||
-      !slug ||
-      !adminFirstName ||
-      !adminLastName ||
-      !adminEmail ||
-      !adminPassword
-    ) {
-      throw new AppError("All fields are required", 400, "VALIDATION_ERROR");
+    if (!organisationName || !slug || !adminEmail) {
+      throw new AppError(
+        "organisationName, slug, and adminEmail are required",
+        400,
+        "VALIDATION_ERROR"
+      );
     }
 
     const result = await adminService.createOrganisation({
       organisationName,
       slug,
-      adminFirstName,
-      adminLastName,
       adminEmail,
-      adminPassword,
     });
 
     res.status(201).json({
