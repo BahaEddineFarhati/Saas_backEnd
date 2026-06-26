@@ -34,7 +34,7 @@ export const login = async (
 
   // Check if account is deactivated
   if (!user.isActive) {
-    throw new AppError("Your account has been deactivated", 403, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Your account has been deactivated", 403, "AUTH_ACCOUNT_DEACTIVATED");
   }
 
   // Compare passwords
@@ -141,7 +141,7 @@ export const refreshAccessToken = async (
     await prisma.refreshToken.delete({
       where: { token: refreshToken },
     });
-    throw new AppError("Your account has been deactivated", 403, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Your account has been deactivated", 403, "AUTH_ACCOUNT_DEACTIVATED");
   }
 
   // Generate new access token with org and role

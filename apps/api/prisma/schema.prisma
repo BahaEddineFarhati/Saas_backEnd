@@ -15,8 +15,9 @@ model Organisation {
   name        String
   slug        String    @unique
   plan        Plan      @default(FREE)
-  suspended   Boolean   @default(false)
-  suspendedAt DateTime?
+  suspended       Boolean   @default(false)
+  suspendedAt     DateTime?
+  suspendedReason String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

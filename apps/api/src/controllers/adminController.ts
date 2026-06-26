@@ -111,7 +111,8 @@ export const updateOrganisation = catchAsync(
 export const suspendOrganisation = catchAsync(
   async (req: Request, res: Response) => {
     const { orgId } = req.params;
-    const result = await adminService.suspendOrganisation(orgId);
+    const { reason } = req.body;
+    const result = await adminService.suspendOrganisation(orgId, reason);
 
     res.status(200).json({
       success: true,

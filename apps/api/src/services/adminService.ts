@@ -4,6 +4,7 @@ import { redis } from "@/lib/redis";
 import { AppError } from "@/utils/AppError";
 
 const SALT_ROUNDS = 12;
+const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
 
 /**
  * Create a new organisation with its admin user in a single transaction.
@@ -237,6 +238,15 @@ export const updateOrganisation = async (
     }
   }
 
+  // Validate plan if provided
+  if (data.plan !== undefined && !VALID_PLANS.includes(data.plan)) {
+    throw new AppError(
+      `Invalid plan. Must be one of: ${VALID_PLANS.join(', ')}`,
+      400,
+      'VALIDATION_ERROR'
+    );
+  }
+
   const updateData: any = {};
   if (data.name !== undefined) updateData.name = data.name;
   if (data.slug !== undefined) updateData.slug = data.slug;
@@ -256,7 +266,7 @@ export const updateOrganisation = async (
  * 2. Delete all refresh tokens for org users (force re-auth)
  * 3. Update Redis cache so the auth middleware blocks requests immediately
  */
-export const suspendOrganisation = async (orgId: string) => {
+export const suspendOrganisation = async (orgId: string, reason?: string) => {
   const existing = await prisma.organisation.findUnique({
     where: { id: orgId },
   });
@@ -272,6 +282,7 @@ export const suspendOrganisation = async (orgId: string) => {
     data: {
       suspended: true,
       suspendedAt: new Date(),
+      suspendedReason: reason || null,
     },
   });
 
@@ -311,6 +322,7 @@ export const unsuspendOrganisation = async (orgId: string) => {
     data: {
       suspended: false,
       suspendedAt: null,
+      suspendedReason: null,
     },
   });
 

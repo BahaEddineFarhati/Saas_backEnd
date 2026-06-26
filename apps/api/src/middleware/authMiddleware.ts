@@ -77,7 +77,7 @@ export const verifyAuthToken = catchAsync(
   }
 
   if (!user.isActive) {
-    throw new AppError("Account deactivated", 401, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Account deactivated", 401, "AUTH_ACCOUNT_DEACTIVATED");
   }
 
   // Suspension check for org-bound users (ADMIN / RECRUITER)
