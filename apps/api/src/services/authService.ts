@@ -213,7 +213,7 @@ export const acceptInvite = async (input: {
         data: {
           email: archivedEmail,
           isActive: false,
-          organisationId: null, // Detach from old org
+          departureStatus: "QUIT",
         },
       });
 

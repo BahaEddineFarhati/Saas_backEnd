@@ -30,15 +30,7 @@ export const createOrganisation = async (input: {
     throw new AppError("Organisation slug already taken", 409, "SLUG_TAKEN");
   }
 
-  // Check if email already in use by another user
-  const existingUser = await prisma.user.findUnique({
-    where: { email: adminEmail },
-  });
-  if (existingUser) {
-    throw new AppError("Email already in use", 409, "EMAIL_TAKEN");
-  }
-
-  // Create the organisation (no user yet)
+  // Create the organisation (no user yet — the admin will accept the invite later)
   const organisation = await prisma.organisation.create({
     data: {
       name: organisationName,

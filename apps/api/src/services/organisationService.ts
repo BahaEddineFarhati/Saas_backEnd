@@ -96,7 +96,7 @@ export const updateOrganisation = async (
  */
 export const getMembers = async (organisationId: string) => {
   // Fetch real users
-  const members = await prisma.user.findMany({
+  const rawMembers = await prisma.user.findMany({
     where: { organisationId },
     select: {
       id: true,
@@ -105,9 +105,31 @@ export const getMembers = async (organisationId: string) => {
       email: true,
       role: true,
       isActive: true,
+      departureStatus: true,
       createdAt: true,
     },
     orderBy: { createdAt: "asc" },
+  });
+
+  // Clean up email for departed users (strip departed_<timestamp>_ prefix)
+  const members = rawMembers.map((m) => {
+    let email = m.email;
+    if (email.startsWith("departed_")) {
+      const parts = email.split("_");
+      if (parts.length >= 3) {
+        email = parts.slice(2).join("_");
+      }
+    }
+    return {
+      id: m.id,
+      firstName: m.firstName,
+      lastName: m.lastName,
+      email,
+      role: m.role,
+      isActive: m.isActive,
+      departureStatus: m.departureStatus,
+      createdAt: m.createdAt,
+    };
   });
 
   // Fetch pending invites (not used, not expired)
