@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
+import { deleteFile } from "@/lib/storage";
 
 /**
  * Create a new job opening
@@ -187,4 +188,71 @@ export const closeJob = async (
   });
 
   return updatedJob;
+};
+
+/**
+ * Delete a candidate (and its stored file). Only ADMIN or job creator may delete.
+ */
+export const deleteCandidate = async (
+  candidateId: string,
+  jobId: string,
+  organisationId: string,
+  userId: string,
+  userRole: string
+) => {
+  const job = await prisma.jobOpening.findUnique({ where: { id: jobId } });
+  if (!job || job.organisationId !== organisationId) {
+    throw new AppError("Job opening not found", 404, "JOB_NOT_FOUND");
+  }
+
+  const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
+  if (!candidate || candidate.jobOpeningId !== jobId) {
+    throw new AppError("Candidate not found", 404, "CANDIDATE_NOT_FOUND");
+  }
+
+  if (userRole !== "ADMIN" && job.createdById !== userId) {
+    throw new AppError("You do not have permission to delete this candidate", 403, "FORBIDDEN");
+  }
+
+  try {
+    if (candidate.rawFileUrl) {
+      await deleteFile(candidate.rawFileUrl);
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("Failed to delete candidate file:", err instanceof Error ? err.message : err);
+  }
+
+  await prisma.candidate.delete({ where: { id: candidateId } });
+};
+
+/**
+ * Delete a job opening and its candidates (and stored files). Only ADMIN or job creator may delete.
+ */
+export const deleteJob = async (
+  jobId: string,
+  organisationId: string,
+  userId: string,
+  userRole: string
+) => {
+  const job = await prisma.jobOpening.findFirst({ where: { id: jobId, organisationId } });
+  if (!job) {
+    throw new AppError("Job opening not found", 404, "JOB_NOT_FOUND");
+  }
+
+  if (userRole !== "ADMIN" && job.createdById !== userId) {
+    throw new AppError("You do not have permission to delete this job", 403, "FORBIDDEN");
+  }
+
+  const candidates = await prisma.candidate.findMany({ where: { jobOpeningId: jobId }, select: { id: true, rawFileUrl: true } });
+  for (const c of candidates) {
+    try {
+      if (c.rawFileUrl) await deleteFile(c.rawFileUrl);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to delete candidate file:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  await prisma.jobOpening.delete({ where: { id: jobId } });
 };

@@ -530,3 +530,44 @@ export const getCandidateById = catchAsync(
     });
   }
 );
+
+/**
+ * DELETE /api/v1/jobs/:jobId/candidates/:candidateId
+ * Delete a candidate. Only ADMIN or job creator may delete.
+ */
+export const deleteCandidate = catchAsync(
+  async (req: Request, res: Response) => {
+    const jobId = req.params.jobId;
+    const candidateId = req.params.candidateId;
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+    const organisationId = req.user?.organisationId;
+
+    if (!userId || !userRole || !organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    await jobService.deleteCandidate(candidateId, jobId, organisationId, userId, userRole);
+
+    res.status(200).json({ success: true, message: "Candidate deleted" });
+  }
+);
+
+/**
+ * DELETE /api/v1/jobs/:id
+ * Delete a job opening and its candidates. Only ADMIN or job creator may delete.
+ */
+export const deleteJob = catchAsync(async (req: Request, res: Response) => {
+  const jobId = req.params.id;
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  const organisationId = req.user?.organisationId;
+
+  if (!userId || !userRole || !organisationId) {
+    throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+  }
+
+  await jobService.deleteJob(jobId, organisationId, userId, userRole);
+
+  res.status(200).json({ success: true, message: "Job deleted" });
+});

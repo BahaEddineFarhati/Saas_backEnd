@@ -7,6 +7,8 @@ import {
   uploadCandidates,
   getCandidates,
   getCandidateById,
+  deleteCandidate,
+  deleteJob,
 } from "@/controllers/jobController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { uploadMiddleware } from "@/lib/multer";
@@ -71,5 +73,15 @@ router.get("/:jobId/candidates", verifyAuthToken, getCandidates);
  * Protected: requires authentication
  */
 router.get("/:jobId/candidates/:candidateId", verifyAuthToken, getCandidateById);
+
+// Delete a candidate
+router.delete(
+  "/:jobId/candidates/:candidateId",
+  verifyAuthToken,
+  deleteCandidate
+);
+
+// Delete a job opening
+router.delete("/:id", verifyAuthToken, deleteJob);
 
 export default router;
