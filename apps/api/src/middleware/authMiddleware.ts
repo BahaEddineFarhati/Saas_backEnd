@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { AppError } from "@/utils/AppError";
 import { verifyAccessToken } from "@/utils/jwt";
 import { prisma } from "@/lib/prisma";
+import { redis } from "@/lib/redis";
 import { catchAsync } from "@/utils/catchAsync";
 
 /**
@@ -13,7 +14,7 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        organisationId: string;
+        organisationId: string | null;
         role: string;
       };
     }
@@ -76,7 +77,32 @@ export const verifyAuthToken = catchAsync(
   }
 
   if (!user.isActive) {
-    throw new AppError("Account deactivated", 401, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Account deactivated", 401, "AUTH_ACCOUNT_DEACTIVATED");
+  }
+
+  // Suspension check for org-bound users (ADMIN / RECRUITER)
+  if (user.role === 'ADMIN' || user.role === 'RECRUITER') {
+    const orgId = user.organisationId!;
+    const cacheKey = `org_suspended:${orgId}`;
+
+    // Check Redis cache first
+    const cached = await redis.get(cacheKey);
+    let isSuspended: boolean;
+
+    if (cached !== null) {
+      isSuspended = cached === 'true';
+    } else {
+      const org = await prisma.organisation.findUnique({
+        where: { id: orgId },
+        select: { suspended: true },
+      });
+      isSuspended = org?.suspended ?? false;
+      await redis.set(cacheKey, String(isSuspended), 'EX', 60);
+    }
+
+    if (isSuspended) {
+      throw new AppError('Organisation suspended', 403, 'ORG_SUSPENDED');
+    }
   }
 
     // Attach user to request

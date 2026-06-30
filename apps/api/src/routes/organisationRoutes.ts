@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { requireAdmin } from "@/middleware/requireAdmin";
+import { blockSuperAdmin } from "@/middleware/blockSuperAdmin";
 import {
   getOrganisation,
   updateOrganisation,
@@ -12,8 +13,8 @@ import {
 
 const router = Router();
 
-// All routes require authentication + admin role
-router.use(verifyAuthToken, requireAdmin);
+// All routes require authentication + block super admin + admin role
+router.use(verifyAuthToken, blockSuperAdmin, requireAdmin);
 
 /**
  * GET /api/v1/organisation

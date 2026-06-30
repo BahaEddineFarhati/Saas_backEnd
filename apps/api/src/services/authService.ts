@@ -34,7 +34,7 @@ export const login = async (
 
   // Check if account is deactivated
   if (!user.isActive) {
-    throw new AppError("Your account has been deactivated", 403, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Your account has been deactivated", 401, "AUTH_ACCOUNT_DEACTIVATED");
   }
 
   // Compare passwords
@@ -141,7 +141,7 @@ export const refreshAccessToken = async (
     await prisma.refreshToken.delete({
       where: { token: refreshToken },
     });
-    throw new AppError("Your account has been deactivated", 403, "ACCOUNT_DEACTIVATED");
+    throw new AppError("Your account has been deactivated", 401, "AUTH_ACCOUNT_DEACTIVATED");
   }
 
   // Generate new access token with org and role
@@ -155,6 +155,10 @@ export const refreshAccessToken = async (
 /**
  * Accept an invite and create a new user account.
  * Verifies the JWT invite token, creates the user, and returns auth tokens.
+ *
+ * If the email is already in use (e.g. the user is switching organisations),
+ * the old account is deactivated and marked as "DEPARTED" — the old user's
+ * email is archived so the new account can take over the email address.
  */
 export const acceptInvite = async (input: {
   token: string;
@@ -190,21 +194,36 @@ export const acceptInvite = async (input: {
     throw new AppError("This invitation has expired", 400, "INVITE_EXPIRED");
   }
 
-  // Check if user with this email already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email: decoded.email },
-  });
-
-  if (existingUser) {
-    throw new AppError("An account with this email already exists", 409, "AUTH_EMAIL_TAKEN");
-  }
-
   // Hash password
   const passwordHash = await bcrypt.hash(password, 12);
 
   // Create user and mark invite as used in a transaction
   return await prisma.$transaction(async (tx) => {
-    // Create the user
+    // Check if user with this email already exists
+    const existingUser = await tx.user.findUnique({
+      where: { email: decoded.email },
+    });
+
+    if (existingUser) {
+      // User is switching organisations — deactivate the old account.
+      // Archive the old email so the unique constraint is not violated.
+      const archivedEmail = `departed_${Date.now()}_${existingUser.email}`;
+      await tx.user.update({
+        where: { id: existingUser.id },
+        data: {
+          email: archivedEmail,
+          isActive: false,
+          departureStatus: "QUIT",
+        },
+      });
+
+      // Revoke all refresh tokens for the old account
+      await tx.refreshToken.deleteMany({
+        where: { userId: existingUser.id },
+      });
+    }
+
+    // Create the new user in the invited organisation
     const user = await tx.user.create({
       data: {
         email: decoded.email,

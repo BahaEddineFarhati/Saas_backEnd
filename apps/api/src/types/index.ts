@@ -55,7 +55,7 @@ export interface LoginResponse {
     firstName: string;
     lastName: string;
     role: string;
-    organisationId: string;
+    organisationId: string | null;
   };
 }
 /**
@@ -70,7 +70,7 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        organisationId: string;
+        organisationId: string | null;
         role: string;
       };
     }

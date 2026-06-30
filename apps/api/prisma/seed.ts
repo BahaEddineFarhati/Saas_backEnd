@@ -7,6 +7,28 @@ async function main() {
   try {
     console.log('🌱 Starting database seeding...\n');
 
+    // 0. Upsert Super Admin (no organisation)
+    console.log('🦸 Upserting SUPER_ADMIN user...');
+    const existingSuperAdmin = await prisma.user.findUnique({
+      where: { email: 'superadmin@linkup.tn' },
+    });
+    const superAdminPasswordHash = await bcrypt.hash('SuperAdmin1234!', SALT_ROUNDS);
+    const superAdmin = await prisma.user.upsert({
+      where: { email: 'superadmin@linkup.tn' },
+      update: {},
+      create: {
+        email: 'superadmin@linkup.tn',
+        passwordHash: superAdminPasswordHash,
+        firstName: 'Super',
+        lastName: 'Admin',
+        role: 'SUPER_ADMIN',
+        organisationId: null,
+        isActive: true,
+      },
+    });
+    const superAdminStatus = existingSuperAdmin ? 'already exists' : 'created';
+    console.log(`✓ Super Admin: ${superAdminStatus} - ${superAdmin.email}\n`);
+
     // 1. Upsert Organisation
     console.log('📋 Upserting Organisation...');
     const existingOrg = await prisma.organisation.findUnique({
@@ -101,6 +123,7 @@ async function main() {
 
     console.log('✅ Database seeding completed successfully!\n');
     console.log('📊 Summary:');
+    console.log(`   - Super Admin: ${superAdmin.email} - ${superAdminStatus}`);
     console.log(`   - Organisation: ${organisation.name} (${organisation.slug}) - ${orgStatus}`);
     console.log(`   - Admin User: ${adminUser.email} - ${adminStatus}`);
     console.log(`   - Recruiter User: ${recruiterUser.email} - ${recruiterStatus}`);
