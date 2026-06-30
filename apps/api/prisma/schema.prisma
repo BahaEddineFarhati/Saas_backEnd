@@ -69,17 +69,18 @@ model JobOpening {
 }
 
 model Candidate {
-  id            String   @id @default(cuid())
-  firstName     String?
-  lastName      String?
-  email         String?
-  rawFileUrl    String
-  parsedJson    Json?
-  score         Float    @default(0)
-  status        CandidateStatus @default(PENDING)
-  jobOpeningId  String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(cuid())
+  firstName         String?
+  lastName          String?
+  email             String?
+  rawFileUrl        String
+  parsedJson        Json?
+  score             Int?
+  scoreExplanation  Json?
+  status            CandidateStatus @default(PENDING)
+  jobOpeningId      String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   jobOpening    JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
 

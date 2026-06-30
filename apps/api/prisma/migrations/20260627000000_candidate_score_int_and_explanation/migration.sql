@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "candidates"
+  ALTER COLUMN "score" DROP DEFAULT,
+  ALTER COLUMN "score" DROP NOT NULL,
+  ALTER COLUMN "score" SET DATA TYPE INTEGER USING ROUND("score")::INTEGER,
+  ADD COLUMN "scoreExplanation" JSONB;

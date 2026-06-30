@@ -8,13 +8,20 @@ jest.mock("@/lib/llm", () => ({
   callLLM: jest.fn(),
 }));
 jest.mock("@/lib/prisma", () => ({
-  prisma: { candidate: { update: jest.fn() } },
+  prisma: {
+    candidate: {
+      update: jest.fn(),
+      findUnique: jest.fn(),
+      count: jest.fn(),
+      findMany: jest.fn(),
+    },
+  },
 }));
 jest.mock("bullmq", () => ({
   Worker: jest.fn().mockImplementation((_q: string, _fn: unknown, _opts: unknown) => ({
     on: jest.fn(),
   })),
-  Queue: jest.fn().mockImplementation((name: string) => ({ name })),
+  Queue: jest.fn().mockImplementation((name: string) => ({ name, add: jest.fn() })),
   QueueEvents: jest.fn().mockImplementation((name: string) => ({ name })),
 }));
 jest.mock("pdf-parse", () => ({
@@ -30,6 +37,7 @@ jest.mock("mammoth", () => ({
 import { downloadFile } from "@/lib/storage";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
+import { cvScoringQueue } from "@/lib/queue";
 import mammoth from "mammoth";
 import { startCvParsingWorker } from "@/workers/cvParser.worker";
 
@@ -37,6 +45,15 @@ const mockedDownload = downloadFile as jest.MockedFunction<typeof downloadFile>;
 const mockedCallLLM = callLLM as jest.MockedFunction<typeof callLLM>;
 const mockedUpdate = prisma.candidate.update as jest.MockedFunction<
   typeof prisma.candidate.update
+>;
+const mockedFindUnique = prisma.candidate.findUnique as jest.MockedFunction<
+  typeof prisma.candidate.findUnique
+>;
+const mockedCount = prisma.candidate.count as jest.MockedFunction<
+  typeof prisma.candidate.count
+>;
+const mockedFindMany = prisma.candidate.findMany as jest.MockedFunction<
+  typeof prisma.candidate.findMany
 >;
 const mockedMammoth = mammoth.extractRawText as jest.MockedFunction<
   typeof mammoth.extractRawText
@@ -74,6 +91,9 @@ describe("CV parsing worker — processor function", () => {
     mockedDownload.mockResolvedValue(Buffer.from("fake file"));
     mockedCallLLM.mockResolvedValue(VALID_PARSED_JSON);
     mockedUpdate.mockResolvedValue({} as never);
+    mockedFindUnique.mockResolvedValue({ jobOpeningId: "job-1" } as never);
+    mockedCount.mockResolvedValue(0); // no PENDING candidates remain by default
+    mockedFindMany.mockResolvedValue([]);
 
     // Capture the processor function passed to Worker constructor
     const { Worker } = jest.requireMock("bullmq") as {
@@ -200,6 +220,72 @@ describe("CV parsing worker — processor function", () => {
       expect.objectContaining({
         data: { status: CandidateStatus.FAILED },
       })
+    );
+  });
+});
+
+describe("CV parsing worker — scoring job opening completion check", () => {
+  let processorFn: (job: {
+    data: { candidateId: string; fileUrl: string };
+    attemptsMade: number;
+    opts: { attempts?: number };
+  }) => Promise<void>;
+  const mockedQueueAdd = cvScoringQueue.add as jest.MockedFunction<typeof cvScoringQueue.add>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedDownload.mockResolvedValue(Buffer.from("fake file"));
+    mockedFindUnique.mockResolvedValue({ jobOpeningId: "job-1" } as never);
+
+    const { Worker } = jest.requireMock("bullmq") as { Worker: jest.Mock };
+    Worker.mockImplementation(
+      (_q: string, fn: typeof processorFn, _opts: unknown) => {
+        processorFn = fn;
+        return { on: jest.fn() };
+      }
+    );
+
+    startCvParsingWorker();
+  });
+
+  it("does NOT enqueue scoring jobs while PENDING candidates remain in the job opening", async () => {
+    mockedCallLLM.mockRejectedValue(new Error("LLM timeout"));
+    mockedCount.mockResolvedValue(2); // other candidates still PENDING
+
+    await expect(
+      processorFn({
+        data: { candidateId: "cand-7", fileUrl: "http://storage/file.pdf" },
+        attemptsMade: 2,
+        opts: { attempts: 3 },
+      })
+    ).rejects.toThrow("LLM timeout");
+
+    expect(mockedQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("enqueues one scoring job per SCORED candidate once no PENDING candidates remain", async () => {
+    mockedCallLLM.mockRejectedValue(new Error("LLM timeout"));
+    mockedCount.mockResolvedValue(0); // no PENDING candidates left
+    mockedFindMany.mockResolvedValue([{ id: "cand-a" }, { id: "cand-b" }] as never);
+
+    await expect(
+      processorFn({
+        data: { candidateId: "cand-7", fileUrl: "http://storage/file.pdf" },
+        attemptsMade: 2,
+        opts: { attempts: 3 },
+      })
+    ).rejects.toThrow("LLM timeout");
+
+    expect(mockedQueueAdd).toHaveBeenCalledTimes(2);
+    expect(mockedQueueAdd).toHaveBeenCalledWith(
+      "score-cv",
+      { candidateId: "cand-a" },
+      { jobId: "score-cv-cand-a" }
+    );
+    expect(mockedQueueAdd).toHaveBeenCalledWith(
+      "score-cv",
+      { candidateId: "cand-b" },
+      { jobId: "score-cv-cand-b" }
     );
   });
 });
