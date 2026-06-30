@@ -4,6 +4,7 @@ import authRoutes from "@/routes/authRoutes";
 import jobRoutes from "@/routes/jobRoutes";
 import organisationRoutes from "@/routes/organisationRoutes";
 import adminRoutes from "@/routes/adminRoutes";
+import dashboardRoutes from "@/routes/dashboardRoutes";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { requireSuperAdmin } from "@/middleware/requireSuperAdmin";
 
@@ -66,6 +67,17 @@ router.use("/jobs", jobRoutes);
  * POST   /api/v1/organisation/members/invite
  */
 router.use("/organisation", organisationRoutes);
+
+/**
+ * Mount dashboard routes at /dashboard
+ * GET /api/v1/dashboard/stats
+ * GET /api/v1/dashboard/recent-job-openings
+ * GET /api/v1/dashboard/recent-activity
+ * GET /api/v1/dashboard/charts/candidates-over-time
+ * GET /api/v1/dashboard/charts/parsing-status
+ * GET /api/v1/dashboard/charts/openings-funnel
+ */
+router.use("/dashboard", dashboardRoutes);
 
 /**
  * Mount super admin routes at /admin
