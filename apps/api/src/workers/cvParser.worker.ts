@@ -79,15 +79,23 @@ function extractJsonFromResponse(raw: string): Record<string, unknown> {
 async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
   const { candidateId, fileUrl } = job.data;
 
+  console.log(`📥 Processing CV for candidate ${candidateId}, file: ${fileUrl}`);
+
   const fileBuffer = await downloadFile(fileUrl);
+  console.log(`✅ Downloaded file: ${fileBuffer.length} bytes`);
+
   const rawText = await extractText(fileBuffer, fileUrl);
+  console.log(`✅ Extracted text: ${rawText.length} characters`);
 
   const llmResponse = await callLLM(
     CV_EXTRACTION_PROMPT(rawText),
     CV_EXTRACTION_SYSTEM_PROMPT
   );
+  console.log(`✅ LLM response received: ${llmResponse.length} characters`);
+  console.log(`📄 LLM response:\n${llmResponse}`);
 
   const parsedData = extractJsonFromResponse(llmResponse);
+  console.log(`✅ Parsed JSON:`, JSON.stringify(parsedData, null, 2));
 
   await prisma.candidate.update({
     where: { id: candidateId },

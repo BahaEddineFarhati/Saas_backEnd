@@ -275,7 +275,9 @@ export const getOrganisation = catchAsync(async (req: any, res: any) => {
 - `PORT` (default: `3001`)
 - `NODE_ENV` (default: `development`)
 - `JWT_REFRESH_SECRET` (defaults to `JWT_SECRET`)
-- `LLM_API_KEY` - API key for LLM service
+- `LLM_API_KEY` - API key for LLM service (set only when `LLM_PROVIDER=cloud`)
+- `LLM_API_URL` - base URL of the cloud provider endpoint, for Mistral use `https://api.mistral.ai/v1`
+- `LLM_MODEL` - cloud model name, for Mistral use `mistral-small-latest`
 - `SMTP_HOST` - SMTP server for invite emails
 - `SMTP_PORT` (default: `587`)
 - `SMTP_USER` - SMTP auth username

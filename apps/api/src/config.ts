@@ -10,6 +10,9 @@ interface Config {
   jwtSecret: string;
   jwtRefreshSecret: string;
   frontendUrl: string;
+  llmProvider: "cloud" | "local";
+  llmApiUrl: string;
+  llmModel: string;
   llmApiKey: string;
   storage: {
     endpoint: string;
@@ -51,6 +54,22 @@ const validateConfig = (): void => {
  * Validates required environment variables before returning.
  */
 export const getConfig = (): Config => {
+  const provider = (process.env.LLM_PROVIDER === "cloud" ? "cloud" : "local") as Config["llmProvider"];
+
+  if (provider === "cloud") {
+    const cloudRequiredVars = ["LLM_API_URL", "LLM_MODEL", "LLM_API_KEY"];
+    const missingCloudVars = cloudRequiredVars.filter((varName) => !process.env[varName]);
+    if (missingCloudVars.length > 0) {
+      console.error(
+        `\n❌ Missing required cloud LLM environment variables:\n${missingCloudVars
+          .map((v) => `   - ${v}`)
+          .join("\n")}\n`
+      );
+      console.error("Please set these cloud LLM variables before starting the server.\n");
+      process.exit(1);
+    }
+  }
+
   validateConfig();
 
   return {
@@ -60,6 +79,9 @@ export const getConfig = (): Config => {
     jwtSecret: process.env.JWT_SECRET!,
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!,
     frontendUrl: process.env.FRONTEND_URL!,
+    llmProvider: provider,
+    llmApiUrl: process.env.LLM_API_URL || "",
+    llmModel: process.env.LLM_MODEL || "",
     llmApiKey: process.env.LLM_API_KEY || "",
     storage: {
       endpoint: process.env.STORAGE_ENDPOINT!,

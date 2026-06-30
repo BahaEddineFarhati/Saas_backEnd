@@ -30,6 +30,11 @@ async function callCloud(prompt: string, systemPrompt: string): Promise<string> 
     );
   }
 
+  // Supports OpenAI-compatible cloud providers, including Mistral Cloud.
+  // For Mistral, use:
+  //   LLM_API_URL=https://api.mistral.ai/v1
+  //   LLM_MODEL=mistral-small-latest
+
   const body: OpenAIRequest = {
     model,
     messages: [

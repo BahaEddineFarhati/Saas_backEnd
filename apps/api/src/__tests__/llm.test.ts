@@ -77,6 +77,17 @@ describe("callLLM — cloud mode", () => {
     expect((body as { model: string }).model).toBe("gpt-4o-mini");
   });
 
+  it("supports Mistral Cloud configuration", async () => {
+    process.env.LLM_API_URL = "https://api.mistral.ai/v1";
+    process.env.LLM_MODEL = "mistral-small-latest";
+
+    await callLLM("prompt", "system");
+
+    const [url, body] = mockedAxios.post.mock.calls[0];
+    expect(url).toBe("https://api.mistral.ai/v1/chat/completions");
+    expect((body as { model: string }).model).toBe("mistral-small-latest");
+  });
+
   it("throws when LLM_API_URL is missing", async () => {
     delete process.env.LLM_API_URL;
     await expect(callLLM("p", "s")).rejects.toThrow("LLM_API_URL");

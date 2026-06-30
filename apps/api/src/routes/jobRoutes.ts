@@ -7,6 +7,8 @@ import {
   uploadCandidates,
   getCandidates,
   getCandidateById,
+  deleteCandidate,
+  deleteJob,
 } from "@/controllers/jobController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { blockSuperAdmin } from "@/middleware/blockSuperAdmin";
@@ -73,6 +75,16 @@ router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates
  * Protected: requires authentication
  */
 router.get("/:jobId/candidates/:candidateId", verifyAuthToken, blockSuperAdmin, getCandidateById);
+
+// Delete a candidate
+router.delete(
+  "/:jobId/candidates/:candidateId",
+  verifyAuthToken,
+  deleteCandidate
+);
+
+// Delete a job opening
+router.delete("/:id", verifyAuthToken, deleteJob);
 
 export default router;
 
