@@ -7,6 +7,7 @@ import {
   uploadCandidates,
   getCandidates,
   getCandidateById,
+  getScoringStatus,
   deleteCandidate,
   deleteJob,
 } from "@/controllers/jobController";
@@ -30,6 +31,28 @@ router.post("/", verifyAuthToken, blockSuperAdmin, createJob);
  * Protected: requires authentication
  */
 router.get("/", verifyAuthToken, blockSuperAdmin, getJobs);
+
+/**
+ * GET /api/v1/jobs/:jobId/scoring-status
+ * Get lightweight scoring progress summary for a job opening
+ * Protected: requires authentication
+ */
+router.get("/:jobId/scoring-status", verifyAuthToken, blockSuperAdmin, getScoringStatus);
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates
+ * Get all candidates for a job opening with optional filtering and pagination
+ * Query params: status, verdict, page, limit
+ * Protected: requires authentication
+ */
+router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates);
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates/:candidateId
+ * Get full details of a specific candidate including parsed CV data
+ * Protected: requires authentication
+ */
+router.get("/:jobId/candidates/:candidateId", verifyAuthToken, blockSuperAdmin, getCandidateById);
 
 /**
  * GET /api/v1/jobs/:id
@@ -60,21 +83,6 @@ router.post(
   uploadMiddleware.array("files", 100),
   uploadCandidates
 );
-
-/**
- * GET /api/v1/jobs/:jobId/candidates
- * Get all candidates for a job opening with optional filtering and pagination
- * Query params: status, page, limit
- * Protected: requires authentication
- */
-router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates);
-
-/**
- * GET /api/v1/jobs/:jobId/candidates/:candidateId
- * Get full details of a specific candidate including parsed CV data
- * Protected: requires authentication
- */
-router.get("/:jobId/candidates/:candidateId", verifyAuthToken, blockSuperAdmin, getCandidateById);
 
 // Delete a candidate
 router.delete(
