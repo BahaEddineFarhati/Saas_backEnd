@@ -468,7 +468,17 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
   const startIndex = (page - 1) * limit;
   const paginatedCandidates = sortedCandidates
     .slice(startIndex, startIndex + limit)
-    .map(({ scoreExplanation, ...candidate }) => candidate);
+    .map((candidate) => {
+      const explanation = candidate.scoreExplanation as Record<string, unknown> | null;
+      return {
+        ...candidate,
+        scoreExplanation: explanation,
+        verdict:
+          typeof explanation?.verdict === "string"
+            ? explanation.verdict
+            : undefined,
+      };
+    });
 
   res.status(200).json({
     success: true,
