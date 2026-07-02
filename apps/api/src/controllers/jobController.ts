@@ -449,6 +449,7 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
       status: true,
       score: true,
       scoreExplanation: true,
+      summary: true,
       createdAt: true,
     },
   });

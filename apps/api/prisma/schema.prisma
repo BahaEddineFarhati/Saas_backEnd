@@ -77,6 +77,8 @@ model Candidate {
   parsedJson        Json?
   score             Int?
   scoreExplanation  Json?
+  summary           String?
+  interviewQuestions Json?
   status            CandidateStatus @default(PENDING)
   jobOpeningId      String
   createdAt         DateTime @default(now())

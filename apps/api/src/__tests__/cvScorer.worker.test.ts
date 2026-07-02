@@ -86,7 +86,8 @@ describe("CV scoring worker — processor function", () => {
       opts: { attempts: 3 },
     });
 
-    expect(mockedCallLLM).toHaveBeenCalledTimes(1);
+    // 3 calls total: 1 scoring + 1 summary + 1 interview questions (enrichment phase)
+    expect(mockedCallLLM).toHaveBeenCalledTimes(3);
     const [prompt] = mockedCallLLM.mock.calls[0];
     expect(prompt).toContain("Senior frontend engineer with React and AWS experience");
     expect(prompt).toContain("React");
