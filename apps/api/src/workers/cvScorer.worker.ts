@@ -1,5 +1,6 @@
 import { Worker, Job } from "bullmq";
 import { InputJsonValue } from "@prisma/client/runtime/library";
+import { CandidateStatus } from "@prisma/client";
 import { redisConnection, CV_SCORING_QUEUE } from "@/lib/queue";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
@@ -103,6 +104,7 @@ async function processScoringJob(job: Job<CvScoringJobData>): Promise<void> {
     data: {
       score: result.score,
       scoreExplanation: result as unknown as InputJsonValue,
+      status: CandidateStatus.SCORED,
     },
   });
 
