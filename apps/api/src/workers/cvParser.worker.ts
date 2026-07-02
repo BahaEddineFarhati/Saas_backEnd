@@ -2,10 +2,11 @@ import { Worker, Job } from "bullmq";
 import mammoth from "mammoth";
 import { CandidateStatus } from "@prisma/client";
 import { InputJsonValue } from "@prisma/client/runtime/library";
-import { redisConnection, CV_PARSING_QUEUE } from "@/lib/queue";
+import { redisConnection, CV_PARSING_QUEUE, cvScoringQueue } from "@/lib/queue";
 import { downloadFile } from "@/lib/storage";
 import { callLLM } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
+import { CvScoringJobData } from "@/workers/cvScorer.worker";
 
 // pdf-parse v2 exports a class; use require for CJS interop
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -109,6 +110,37 @@ async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
   });
 }
 
+/**
+ * After a candidate reaches a terminal parsing status (SCORED or FAILED), check whether
+ * every candidate in the same job opening is now terminal too. If so, enqueue one scoring
+ * job per successfully parsed (SCORED) candidate. Using the candidate's own id as the
+ * BullMQ jobId keeps this idempotent if two parsing jobs finish at the same time.
+ */
+async function enqueueScoringIfJobOpeningComplete(candidateId: string): Promise<void> {
+  const candidate = await prisma.candidate.findUnique({
+    where: { id: candidateId },
+    select: { jobOpeningId: true },
+  });
+  if (!candidate) return;
+
+  const remainingPending = await prisma.candidate.count({
+    where: { jobOpeningId: candidate.jobOpeningId, status: CandidateStatus.PENDING },
+  });
+  if (remainingPending > 0) return;
+
+  const scoredCandidates = await prisma.candidate.findMany({
+    where: { jobOpeningId: candidate.jobOpeningId, status: CandidateStatus.SCORED },
+    select: { id: true },
+  });
+
+  for (const c of scoredCandidates) {
+    const jobData: CvScoringJobData = { candidateId: c.id };
+    await cvScoringQueue.add("score-cv", jobData, {
+      jobId: `score-cv-${c.id}`,
+    });
+  }
+}
+
 export function startCvParsingWorker(): Worker<CvParsingJobData> {
   const worker = new Worker<CvParsingJobData>(
     CV_PARSING_QUEUE,
@@ -123,6 +155,7 @@ export function startCvParsingWorker(): Worker<CvParsingJobData> {
             where: { id: job.data.candidateId },
             data: { status: CandidateStatus.FAILED },
           });
+          await enqueueScoringIfJobOpeningComplete(job.data.candidateId);
         }
 
         throw err;
@@ -133,6 +166,9 @@ export function startCvParsingWorker(): Worker<CvParsingJobData> {
 
   worker.on("completed", (job) => {
     console.log(`✅ CV parsed for candidate ${job.data.candidateId}`);
+    enqueueScoringIfJobOpeningComplete(job.data.candidateId).catch((err) => {
+      console.error("Failed to check job opening completion:", err);
+    });
   });
 
   worker.on("failed", (job, err) => {

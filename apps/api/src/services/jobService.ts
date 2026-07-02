@@ -2,6 +2,74 @@ import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
 import { deleteFile } from "@/lib/storage";
 
+export type ScoringStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+
+export interface ScoringStatusSummary {
+  totalCandidates: number;
+  parsedCount: number;
+  scoredCount: number;
+  failedCount: number;
+  scoringStatus: ScoringStatus;
+}
+
+export interface CandidateScoreSortItem {
+  id: string;
+  score: number | null;
+}
+
+export const calculateScoringStatusSummary = ({
+  totalCandidates,
+  parsedCount,
+  scoredCount,
+  failedCount,
+}: {
+  totalCandidates: number;
+  parsedCount: number;
+  scoredCount: number;
+  failedCount: number;
+}): ScoringStatusSummary => {
+  if (totalCandidates === 0 || parsedCount === 0) {
+    return {
+      totalCandidates,
+      parsedCount,
+      scoredCount,
+      failedCount,
+      scoringStatus: "NOT_STARTED",
+    };
+  }
+
+  if (scoredCount < parsedCount - failedCount) {
+    return {
+      totalCandidates,
+      parsedCount,
+      scoredCount,
+      failedCount,
+      scoringStatus: "IN_PROGRESS",
+    };
+  }
+
+  return {
+    totalCandidates,
+    parsedCount,
+    scoredCount,
+    failedCount,
+    scoringStatus: "COMPLETED",
+  };
+};
+
+export const sortCandidatesByScore = <T extends CandidateScoreSortItem>(candidates: T[]) => {
+  return [...candidates].sort((left, right) => {
+    const leftScore = left.score ?? Number.NEGATIVE_INFINITY;
+    const rightScore = right.score ?? Number.NEGATIVE_INFINITY;
+
+    if (leftScore === rightScore) {
+      return 0;
+    }
+
+    return rightScore - leftScore;
+  });
+};
+
 /**
  * Create a new job opening
  */
@@ -115,12 +183,32 @@ export const getJobById = async (jobId: string, organisationId: string) => {
       _count: {
         select: { candidates: true },
       },
+      candidates: {
+        select: {
+          status: true,
+          score: true,
+        },
+      },
     },
   });
 
   if (!job) {
     throw new AppError("Job opening not found", 404, "JOB_NOT_FOUND");
   }
+
+  const parsedCandidates = job.candidates.filter(
+    (candidate) => candidate.status !== "PENDING"
+  );
+  const scoredCandidates = job.candidates.filter(
+    (candidate) => candidate.score !== null && candidate.score !== undefined
+  );
+
+  const scoringStatusSummary = calculateScoringStatusSummary({
+    totalCandidates: job.candidates.length,
+    parsedCount: parsedCandidates.length,
+    scoredCount: scoredCandidates.length,
+    failedCount: job.candidates.filter((candidate) => candidate.status === "FAILED").length,
+  });
 
   return {
     id: job.id,
@@ -132,6 +220,7 @@ export const getJobById = async (jobId: string, organisationId: string) => {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     candidateCount: job._count.candidates,
+    scoringStatus: scoringStatusSummary.scoringStatus,
   };
 };
 

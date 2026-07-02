@@ -398,6 +398,7 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
 
   // Parse query parameters
   const status = req.query.status as string | undefined;
+  const verdict = req.query.verdict as string | undefined;
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
 
@@ -427,10 +428,17 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
     where.status = status;
   }
 
-  // Get total count for pagination
-  const total = await prisma.candidate.count({ where });
+  if (verdict) {
+    const validVerdicts = ["STRONG_FIT", "GOOD_FIT", "PARTIAL_FIT", "WEAK_FIT"];
+    if (!validVerdicts.includes(verdict)) {
+      throw new AppError(
+        `Invalid verdict. Must be one of: ${validVerdicts.join(", ")}`,
+        400,
+        "INVALID_VERDICT"
+      );
+    }
+  }
 
-  // Get paginated candidates
   const candidates = await prisma.candidate.findMany({
     where,
     select: {
@@ -440,21 +448,42 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
       email: true,
       status: true,
       score: true,
+      scoreExplanation: true,
       createdAt: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
-    skip: (page - 1) * limit,
-    take: limit,
   });
 
+  const filteredCandidates = candidates.filter((candidate) => {
+    if (!verdict) {
+      return true;
+    }
+
+    const explanation = candidate.scoreExplanation as Record<string, unknown> | null;
+    return explanation?.verdict === verdict;
+  });
+
+  const sortedCandidates = jobService.sortCandidatesByScore(filteredCandidates);
+  const total = sortedCandidates.length;
   const pages = Math.ceil(total / limit);
+  const startIndex = (page - 1) * limit;
+  const paginatedCandidates = sortedCandidates
+    .slice(startIndex, startIndex + limit)
+    .map((candidate) => {
+      const explanation = candidate.scoreExplanation as Record<string, unknown> | null;
+      return {
+        ...candidate,
+        scoreExplanation: explanation,
+        verdict:
+          typeof explanation?.verdict === "string"
+            ? explanation.verdict
+            : undefined,
+      };
+    });
 
   res.status(200).json({
     success: true,
     data: {
-      candidates,
+      candidates: paginatedCandidates,
       pagination: {
         page,
         limit,
@@ -462,6 +491,51 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
         pages,
       },
     },
+  });
+});
+
+/**
+ * GET /api/v1/jobs/:jobId/scoring-status
+ * Get lightweight scoring progress summary for a job opening
+ */
+export const getScoringStatus = catchAsync(async (req: Request, res: Response) => {
+  const jobId = req.params.jobId;
+  const organisationId = req.user?.organisationId;
+
+  if (!organisationId) {
+    throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+  }
+
+  const job = await prisma.jobOpening.findUnique({
+    where: { id: jobId },
+  });
+
+  if (!job) {
+    throw new AppError("Job not found", 404, "NOT_FOUND");
+  }
+
+  if (job.organisationId !== organisationId) {
+    throw new AppError("Job not found", 404, "NOT_FOUND");
+  }
+
+  const candidates = await prisma.candidate.findMany({
+    where: { jobOpeningId: jobId },
+    select: {
+      status: true,
+      score: true,
+    },
+  });
+
+  const summary = jobService.calculateScoringStatusSummary({
+    totalCandidates: candidates.length,
+    parsedCount: candidates.filter((candidate) => candidate.status !== CandidateStatus.PENDING).length,
+    scoredCount: candidates.filter((candidate) => candidate.score !== null && candidate.score !== undefined).length,
+    failedCount: candidates.filter((candidate) => candidate.status === CandidateStatus.FAILED).length,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: summary,
   });
 });
 

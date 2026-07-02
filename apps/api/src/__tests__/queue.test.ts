@@ -30,4 +30,14 @@ describe("queue configuration", () => {
     const { CV_PARSING_QUEUE } = await import("@/lib/queue");
     expect(CV_PARSING_QUEUE).toBe("cv-parsing");
   });
+
+  it("creates the scoring queue with name cv-scoring", async () => {
+    const { cvScoringQueue } = await import("@/lib/queue");
+    expect(cvScoringQueue.name).toBe("cv-scoring");
+  });
+
+  it("exports CV_SCORING_QUEUE constant", async () => {
+    const { CV_SCORING_QUEUE } = await import("@/lib/queue");
+    expect(CV_SCORING_QUEUE).toBe("cv-scoring");
+  });
 });

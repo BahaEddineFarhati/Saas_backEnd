@@ -26,4 +26,21 @@ export const cvParsingQueueEvents = new QueueEvents(CV_PARSING_QUEUE, {
   connection: redisConnection,
 });
 
+export const CV_SCORING_QUEUE = "cv-scoring";
+
+export const cvScoringQueue = new Queue(CV_SCORING_QUEUE, {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 2000,
+    },
+  },
+});
+
+export const cvScoringQueueEvents = new QueueEvents(CV_SCORING_QUEUE, {
+  connection: redisConnection,
+});
+
 console.log(`✅ Redis queue configured at ${url.hostname}:${url.port || 6379}`);
