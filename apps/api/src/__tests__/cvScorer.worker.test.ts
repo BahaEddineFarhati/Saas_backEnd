@@ -92,7 +92,7 @@ describe("CV scoring worker — processor function", () => {
     expect(prompt).toContain("React");
   });
 
-  it("updates score and scoreExplanation on success, without touching status", async () => {
+  it("updates score, scoreExplanation and status to SCORED on success", async () => {
     await processorFn({
       data: { candidateId: "cand-1" },
       attemptsMade: 0,
@@ -110,11 +110,9 @@ describe("CV scoring worker — processor function", () => {
           missingCriteria: expect.any(Array),
           strengths: expect.any(Array),
         }),
+        status: "SCORED",
       },
     });
-
-    const call = mockedUpdate.mock.calls[0][0] as { data: Record<string, unknown> };
-    expect(call.data).not.toHaveProperty("status");
   });
 
   it("does not update the candidate when the LLM call fails (score stays null)", async () => {
