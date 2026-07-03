@@ -449,6 +449,7 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
       status: true,
       score: true,
       scoreExplanation: true,
+      summary: true,
       createdAt: true,
     },
   });
@@ -598,9 +599,114 @@ export const getCandidateById = catchAsync(
       throw new AppError("Candidate not found", 404, "NOT_FOUND");
     }
 
+    const parsedJson = candidate.parsedJson as Record<string, unknown> | null;
+    const profile = parsedJson ?? {};
+    const phone = parsedJson?.phone ?? parsedJson?.telephone ?? null;
+
+    const scoreExplanation = candidate.scoreExplanation as Record<string, unknown> | null;
+    const scoring = {
+      score: candidate.score,
+      verdict: typeof scoreExplanation?.verdict === "string" ? scoreExplanation.verdict : null,
+      matchedCriteria: Array.isArray(scoreExplanation?.matchedCriteria)
+        ? scoreExplanation?.matchedCriteria
+        : [],
+      missingCriteria: Array.isArray(scoreExplanation?.missingCriteria)
+        ? scoreExplanation?.missingCriteria
+        : [],
+      strengths: Array.isArray(scoreExplanation?.strengths)
+        ? scoreExplanation?.strengths
+        : [],
+    };
+
+    const interviewQuestions = Array.isArray(candidate.interviewQuestions)
+      ? (candidate.interviewQuestions as Array<unknown>).map((item) => {
+          if (typeof item === "object" && item !== null) {
+            const question = (item as Record<string, unknown>).question;
+            const rationale = (item as Record<string, unknown>).rationale;
+            return {
+              question: typeof question === "string" ? question : "",
+              rationale: typeof rationale === "string" ? rationale : "",
+            };
+          }
+          return { question: "", rationale: "" };
+        })
+      : [];
+
     res.status(200).json({
       success: true,
-      data: candidate,
+      data: {
+        id: candidate.id,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email,
+        phone,
+        status: candidate.status,
+        score: candidate.score,
+        createdAt: candidate.createdAt,
+        cv: {
+          rawFileUrl: candidate.rawFileUrl,
+        },
+        profile,
+        scoring,
+        summary: candidate.summary,
+        interviewQuestions,
+      },
+    });
+  }
+);
+
+/**
+ * PATCH /api/v1/jobs/:jobId/candidates/:candidateId/status
+ * Update a candidate's status.
+ */
+export const updateCandidateStatus = catchAsync(
+  async (req: Request, res: Response) => {
+    const jobId = req.params.jobId;
+    const candidateId = req.params.candidateId;
+    const organisationId = req.user?.organisationId;
+
+    if (!organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    const { status } = req.body;
+    if (!status || typeof status !== "string") {
+      throw new AppError("status is required", 400, "VALIDATION_ERROR");
+    }
+
+    if (
+      status !== CandidateStatus.SHORTLISTED &&
+      status !== CandidateStatus.REJECTED
+    ) {
+      throw new AppError(
+        "Only SHORTLISTED and REJECTED are allowed",
+        400,
+        "INVALID_STATUS"
+      );
+    }
+
+    const job = await prisma.jobOpening.findUnique({ where: { id: jobId } });
+    if (!job || job.organisationId !== organisationId) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
+    if (!candidate || candidate.jobOpeningId !== jobId) {
+      throw new AppError("Candidate not found", 404, "NOT_FOUND");
+    }
+
+    const updatedCandidate = await prisma.candidate.update({
+      where: { id: candidateId },
+      data: { status: status as CandidateStatus },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: updatedCandidate,
     });
   }
 );

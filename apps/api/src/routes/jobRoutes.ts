@@ -7,6 +7,7 @@ import {
   uploadCandidates,
   getCandidates,
   getCandidateById,
+  updateCandidateStatus,
   getScoringStatus,
   deleteCandidate,
   deleteJob,
@@ -53,6 +54,18 @@ router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates
  * Protected: requires authentication
  */
 router.get("/:jobId/candidates/:candidateId", verifyAuthToken, blockSuperAdmin, getCandidateById);
+
+/**
+ * PATCH /api/v1/jobs/:jobId/candidates/:candidateId/status
+ * Update a candidate's status to SHORTLISTED or REJECTED.
+ * Protected: requires authentication
+ */
+router.patch(
+  "/:jobId/candidates/:candidateId/status",
+  verifyAuthToken,
+  blockSuperAdmin,
+  updateCandidateStatus
+);
 
 /**
  * GET /api/v1/jobs/:id
