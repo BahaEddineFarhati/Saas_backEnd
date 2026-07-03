@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { AppError } from "@/utils/AppError";
 import { createInvite } from "@/services/organisationService";
+import { cvParsingQueue, cvScoringQueue } from "@/lib/queue";
 
 const VALID_PLANS = ['FREE', 'PRO', 'ENTERPRISE'];
 
@@ -319,6 +320,10 @@ export const getStats = async () => {
     totalCVsThisMonth,
     totalJobOpenings,
     activeJobOpenings,
+    // Scoring KPIs
+    totalCandidatesScored,
+    averageScoreResult,
+    strongFitCandidates,
   ] = await Promise.all([
     prisma.organisation.count(),
     prisma.organisation.count({ where: { suspended: false } }),
@@ -330,7 +335,28 @@ export const getStats = async () => {
     }),
     prisma.jobOpening.count(),
     prisma.jobOpening.count({ where: { status: "OPEN" } }),
+    // Scoring KPIs
+    prisma.candidate.count({ where: { status: "SCORED" } }),
+    prisma.candidate.aggregate({
+      _avg: { score: true },
+      where: { score: { not: null } },
+    }),
+    prisma.candidate.count({ where: { score: { gte: 70 } } }),
   ]);
+
+  // Queue health: sum pending & failed across both cv-parsing and cv-scoring queues
+  const [parsingWaiting, parsingDelayed, parsingFailed, scoringWaiting, scoringDelayed, scoringFailed] =
+    await Promise.all([
+      cvParsingQueue.getWaitingCount(),
+      cvParsingQueue.getDelayedCount(),
+      cvParsingQueue.getFailedCount(),
+      cvScoringQueue.getWaitingCount(),
+      cvScoringQueue.getDelayedCount(),
+      cvScoringQueue.getFailedCount(),
+    ]);
+
+  const queuePendingJobs = parsingWaiting + parsingDelayed + scoringWaiting + scoringDelayed;
+  const queueFailedJobs = parsingFailed + scoringFailed;
 
   return {
     totalOrganisations,
@@ -341,5 +367,12 @@ export const getStats = async () => {
     totalCVsThisMonth,
     totalJobOpenings,
     activeJobOpenings,
+    // Queue health
+    queuePendingJobs,
+    queueFailedJobs,
+    // Scoring KPIs
+    totalCandidatesScored,
+    averagePlatformScore: averageScoreResult._avg.score ?? 0,
+    strongFitCandidates,
   };
 };
