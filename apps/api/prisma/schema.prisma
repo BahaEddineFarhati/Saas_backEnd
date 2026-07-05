@@ -44,6 +44,7 @@ model User {
   organisation   Organisation? @relation(fields: [organisationId], references: [id])
   jobOpenings    JobOpening[] @relation("CreatedBy")
   refreshTokens  RefreshToken[]
+  notifications  Notification[]
 
   @@index([email])
   @@index([organisationId])
@@ -63,9 +64,28 @@ model JobOpening {
   organisation  Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   createdBy     User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   candidates    Candidate[]
+  notifications Notification[]
 
   @@index([organisationId])
   @@map("job_openings")
+}
+
+model Notification {
+  id           String           @id @default(cuid())
+  userId       String
+  type         NotificationType
+  title        String
+  message      String
+  jobOpeningId String
+  read         Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobOpening JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+  @@index([jobOpeningId])
+  @@map("notifications")
 }
 
 model Candidate {
@@ -145,4 +165,9 @@ enum CandidateStatus {
   OFFERED
   SCORED
   FAILED
+}
+
+enum NotificationType {
+  JOB_PARSING_COMPLETED
+  JOB_PARSING_FAILED
 }
