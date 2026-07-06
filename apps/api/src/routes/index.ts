@@ -5,6 +5,7 @@ import jobRoutes from "@/routes/jobRoutes";
 import organisationRoutes from "@/routes/organisationRoutes";
 import adminRoutes from "@/routes/adminRoutes";
 import dashboardRoutes from "@/routes/dashboardRoutes";
+import notificationRoutes from "@/routes/notificationRoutes";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { requireSuperAdmin } from "@/middleware/requireSuperAdmin";
 
@@ -78,6 +79,12 @@ router.use("/organisation", organisationRoutes);
  * GET /api/v1/dashboard/charts/openings-funnel
  */
 router.use("/dashboard", dashboardRoutes);
+
+/**
+ * Mount notification routes at /notifications
+ * Protected: requires authentication
+ */
+router.use("/notifications", verifyAuthToken, notificationRoutes);
 
 /**
  * Mount super admin routes at /admin

@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import mammoth from "mammoth";
-import { CandidateStatus } from "@prisma/client";
+import { CandidateStatus, NotificationType } from "@prisma/client";
 import { InputJsonValue } from "@prisma/client/runtime/library";
 import { redisConnection, CV_PARSING_QUEUE, cvScoringQueue } from "@/lib/queue";
 import { downloadFile } from "@/lib/storage";
@@ -116,6 +116,56 @@ async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
  * job per successfully parsed (SCORED) candidate. Using the candidate's own id as the
  * BullMQ jobId keeps this idempotent if two parsing jobs finish at the same time.
  */
+async function notifyJobOpeningCompletion(jobOpeningId: string): Promise<void> {
+  const jobOpening = await prisma.jobOpening.findUnique({
+    where: { id: jobOpeningId },
+    select: { id: true, title: true, organisationId: true },
+  });
+
+  if (!jobOpening) return;
+
+  const totalCandidates = await prisma.candidate.count({ where: { jobOpeningId } });
+  const successCount = await prisma.candidate.count({
+    where: { jobOpeningId, status: CandidateStatus.SCORED },
+  });
+  const failedCount = await prisma.candidate.count({
+    where: { jobOpeningId, status: CandidateStatus.FAILED },
+  });
+
+  const hasSuccess = successCount > 0;
+  const notificationType = hasSuccess ? NotificationType.JOB_PARSING_COMPLETED : NotificationType.JOB_PARSING_FAILED;
+  const title = hasSuccess ? "Analyse terminée" : "Analyse échouée";
+  const message = `L'analyse de ${totalCandidates} CVs pour le poste ${jobOpening.title} est terminée. ${successCount} candidats analysés avec succès, ${failedCount} en échec.`;
+
+  const teamMembers = await prisma.user.findMany({
+    where: { organisationId: jobOpening.organisationId },
+    select: { id: true },
+  });
+
+  if (teamMembers.length === 0) return;
+
+  const existingNotification = await prisma.notification.findFirst({
+    where: {
+      jobOpeningId,
+      type: notificationType,
+      title,
+      message,
+    },
+  });
+
+  if (existingNotification) return;
+
+  await prisma.notification.createMany({
+    data: teamMembers.map((user) => ({
+      userId: user.id,
+      type: notificationType,
+      title,
+      message,
+      jobOpeningId: jobOpening.id,
+    })),
+  });
+}
+
 async function enqueueScoringIfJobOpeningComplete(candidateId: string): Promise<void> {
   const candidate = await prisma.candidate.findUnique({
     where: { id: candidateId },
@@ -133,6 +183,8 @@ async function enqueueScoringIfJobOpeningComplete(candidateId: string): Promise<
     select: { id: true },
   });
 
+  await notifyJobOpeningCompletion(candidate.jobOpeningId);
+
   for (const c of scoredCandidates) {
     const jobData: CvScoringJobData = { candidateId: c.id };
     await cvScoringQueue.add("score-cv", jobData, {
@@ -147,6 +199,7 @@ export function startCvParsingWorker(): Worker<CvParsingJobData> {
     async (job) => {
       try {
         await processCvJob(job);
+        await enqueueScoringIfJobOpeningComplete(job.data.candidateId);
       } catch (err) {
         const isLastAttempt = job.attemptsMade >= (job.opts.attempts ?? 3) - 1;
 
@@ -166,9 +219,6 @@ export function startCvParsingWorker(): Worker<CvParsingJobData> {
 
   worker.on("completed", (job) => {
     console.log(`✅ CV parsed for candidate ${job.data.candidateId}`);
-    enqueueScoringIfJobOpeningComplete(job.data.candidateId).catch((err) => {
-      console.error("Failed to check job opening completion:", err);
-    });
   });
 
   worker.on("failed", (job, err) => {

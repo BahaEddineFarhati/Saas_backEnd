@@ -15,6 +15,16 @@ jest.mock("@/lib/prisma", () => ({
       count: jest.fn(),
       findMany: jest.fn(),
     },
+    jobOpening: {
+      findUnique: jest.fn(),
+    },
+    user: {
+      findMany: jest.fn(),
+    },
+    notification: {
+      findFirst: jest.fn(),
+      createMany: jest.fn(),
+    },
   },
 }));
 jest.mock("bullmq", () => ({
@@ -286,6 +296,64 @@ describe("CV parsing worker — scoring job opening completion check", () => {
       "score-cv",
       { candidateId: "cand-b" },
       { jobId: "score-cv-cand-b" }
+    );
+  });
+
+  it("creates a completed notification for all users once the last CV of the current batch finishes parsing", async () => {
+    mockedCallLLM.mockResolvedValue(VALID_PARSED_JSON);
+    mockedCount.mockImplementation(((args: any) => {
+      if (args?.where?.status === CandidateStatus.PENDING) return Promise.resolve(0) as never;
+      if (args?.where?.status === CandidateStatus.SCORED) return Promise.resolve(1) as never;
+      if (args?.where?.status === CandidateStatus.FAILED) return Promise.resolve(0) as never;
+      if (args?.where?.parsingBatchId === "batch-1") return Promise.resolve(3) as never;
+      return Promise.resolve(7) as never;
+    }) as unknown as typeof mockedCount);
+    mockedFindMany.mockResolvedValue([{ id: "cand-a" }] as never);
+    (prisma.jobOpening.findUnique as jest.Mock).mockResolvedValue({
+      id: "job-1",
+      title: "Senior Frontend Engineer",
+      organisationId: "org-1",
+    });
+    (prisma.user.findMany as jest.Mock).mockResolvedValue([{ id: "u-1" }, { id: "u-2" }]);
+    (prisma.notification.findFirst as jest.Mock).mockResolvedValue(null);
+    (prisma.notification.createMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+    await processorFn({
+      data: {
+        candidateId: "cand-8",
+        fileUrl: "http://storage/file.pdf",
+        batchId: "batch-1",
+      },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    });
+
+    expect(prisma.notification.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            userId: "u-1",
+            type: "JOB_PARSING_COMPLETED",
+            title: "Analyse terminée",
+            jobOpeningId: "job-1",
+          }),
+          expect.objectContaining({
+            userId: "u-2",
+            type: "JOB_PARSING_COMPLETED",
+            title: "Analyse terminée",
+            jobOpeningId: "job-1",
+          }),
+        ]),
+      })
+    );
+    expect(prisma.notification.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringContaining("3 CVs"),
+          }),
+        ]),
+      })
     );
   });
 });
