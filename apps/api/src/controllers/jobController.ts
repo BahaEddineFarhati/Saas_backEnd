@@ -8,7 +8,7 @@ import {
   validateUploadedFiles,
   type FileValidationError,
 } from "@/lib/multer";
-import { uploadFile } from "@/lib/storage";
+import { downloadFile, uploadFile } from "@/lib/storage";
 import { cvParsingQueue } from "@/lib/queue";
 import type { CvParsingJobData } from "@/workers/cvParser.worker";
 
@@ -337,6 +337,51 @@ export const uploadCandidates = catchAsync(
       }
       throw error;
     }
+  }
+);
+
+export const downloadCandidateCv = catchAsync(
+  async (req: Request, res: Response) => {
+    const { jobId, candidateId } = req.params;
+    const organisationId = req.user?.organisationId;
+
+    if (!organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    const job = await prisma.jobOpening.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    if (job.organisationId !== organisationId) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    const candidate = await prisma.candidate.findFirst({
+      where: {
+        id: candidateId,
+        jobOpeningId: jobId,
+      },
+    });
+
+    if (!candidate?.rawFileUrl) {
+      throw new AppError("CV not found", 404, "NOT_FOUND");
+    }
+
+    const fileBuffer = await downloadFile(candidate.rawFileUrl);
+    const filename = candidate.rawFileUrl.split("/").pop() || "cv.pdf";
+    const extension = filename.toLowerCase().endsWith(".pdf") ? "pdf" : "octet-stream";
+    const mimeType = extension === "pdf"
+      ? "application/pdf"
+      : "application/octet-stream";
+
+    res.set("Content-Disposition", `attachment; filename="${filename}"`);
+    res.set("Content-Type", mimeType);
+    res.status(200).send(fileBuffer);
   }
 );
 

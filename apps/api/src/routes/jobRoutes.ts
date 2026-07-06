@@ -5,6 +5,7 @@ import {
   getJobById,
   closeJob,
   uploadCandidates,
+  downloadCandidateCv,
   getCandidates,
   getCandidateById,
   updateCandidateStatus,
@@ -95,6 +96,13 @@ router.post(
   blockSuperAdmin,
   uploadMiddleware.array("files", 100),
   uploadCandidates
+);
+
+router.get(
+  "/:jobId/candidates/:candidateId/download",
+  verifyAuthToken,
+  blockSuperAdmin,
+  downloadCandidateCv
 );
 
 // Delete a candidate
