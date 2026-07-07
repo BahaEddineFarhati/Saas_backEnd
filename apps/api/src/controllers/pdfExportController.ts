@@ -65,13 +65,13 @@ function buildRecapText(explanation: unknown): string {
   const parts: string[] = [];
 
   if (Array.isArray(exp.strengths) && exp.strengths.length > 0) {
-    parts.push(`✦ Points forts : ${exp.strengths.join(", ")}`);
+    parts.push(`[+] Points forts : ${exp.strengths.join(", ")}`);
   }
   if (Array.isArray(exp.matchedCriteria) && exp.matchedCriteria.length > 0) {
-    parts.push(`✓ Critères remplis : ${exp.matchedCriteria.join(", ")}`);
+    parts.push(`[v] Criteres remplis : ${exp.matchedCriteria.join(", ")}`);
   }
   if (Array.isArray(exp.missingCriteria) && exp.missingCriteria.length > 0) {
-    parts.push(`✗ Manquants : ${exp.missingCriteria.join(", ")}`);
+    parts.push(`[-] Manquants : ${exp.missingCriteria.join(", ")}`);
   }
 
   return parts.length > 0 ? parts.join("\n") : "Aucune explication disponible.";
@@ -261,7 +261,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
     .fontSize(8)
     .fillColor(CLR_BODY)
     .text(
-      `📅  ${exportDate}     ·     👥  ${candidates.length} candidat${candidates.length > 1 ? "s" : ""} évalué${candidates.length > 1 ? "s" : ""}`,
+      `Date : ${exportDate}     |     ${candidates.length} candidat${candidates.length > 1 ? "s" : ""} evalue${candidates.length > 1 ? "s" : ""}`,
       MARGIN + 8,
       currentY + 6,
       { width: CONTENT_WIDTH - 16 }
