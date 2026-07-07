@@ -13,6 +13,7 @@ import {
   deleteCandidate,
   deleteJob,
 } from "@/controllers/jobController";
+import { exportJobPdf } from "@/controllers/pdfExportController";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { blockSuperAdmin } from "@/middleware/blockSuperAdmin";
 import { uploadMiddleware } from "@/lib/multer";
@@ -67,6 +68,13 @@ router.patch(
   blockSuperAdmin,
   updateCandidateStatus
 );
+
+/**
+ * GET /api/v1/jobs/:jobId/export/pdf
+ * Generate and download a PDF report of scored candidates
+ * Protected: requires authentication
+ */
+router.get("/:jobId/export/pdf", verifyAuthToken, blockSuperAdmin, exportJobPdf);
 
 /**
  * GET /api/v1/jobs/:id
