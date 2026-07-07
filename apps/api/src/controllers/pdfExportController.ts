@@ -78,6 +78,28 @@ function buildRecapText(explanation: unknown): string {
 }
 
 /**
+ * Get a human-readable status label in French when no score explanation is available.
+ */
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case "PENDING":
+      return "En attente d'évaluation";
+    case "NEW":
+      return "Nouveau candidat (non traité)";
+    case "SHORTLISTED":
+      return "Candidat shortlisté";
+    case "OFFERED":
+      return "Offre envoyée";
+    case "FAILED":
+      return "Échec du traitement / parsing";
+    case "REJECTED":
+      return "Candidature rejetée";
+    default:
+      return "En attente";
+  }
+}
+
+/**
  * Get a human-readable verdict label in French.
  */
 function getVerdictLabel(verdict: string | undefined): string {
@@ -113,6 +135,10 @@ function drawFooter(
   pageNumber: number,
   totalPages: number
 ): void {
+  // Save original bottom margin and set to 0 to prevent PDFKit from auto-adding blank pages
+  const oldBottom = doc.page.margins.bottom;
+  doc.page.margins.bottom = 0;
+
   // Thin separator line
   doc
     .moveTo(MARGIN, FOOTER_Y - 5)
@@ -136,6 +162,9 @@ function drawFooter(
       width: CONTENT_WIDTH / 2,
       align: "right",
     });
+
+  // Restore original margin
+  doc.page.margins.bottom = oldBottom;
 }
 
 /**
@@ -179,17 +208,31 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
     throw new AppError("Job opening not found", 404, "NOT_FOUND");
   }
 
-  // Fetch only SCORED candidates, sorted by score descending
-  const candidates = await prisma.candidate.findMany({
-    where: { jobOpeningId: jobId, status: "SCORED" },
-    orderBy: { score: "desc" },
+  // Fetch ALL candidates (scored, rejected, pending, etc.)
+  const allCandidates = await prisma.candidate.findMany({
+    where: { jobOpeningId: jobId },
     select: {
       id: true,
       firstName: true,
       lastName: true,
       score: true,
       scoreExplanation: true,
+      status: true,
     },
+  });
+
+  // Sort: scored candidates first by score descending, then rejected/unscored at the end
+  const REJECTED_STATUSES = new Set(["REJECTED", "FAILED"]);
+  const candidates = allCandidates.sort((a, b) => {
+    const aRejected = REJECTED_STATUSES.has(a.status);
+    const bRejected = REJECTED_STATUSES.has(b.status);
+    // Rejected always go last
+    if (aRejected && !bRejected) return 1;
+    if (!aRejected && bRejected) return -1;
+    // Within the same group, sort by score descending (nulls last)
+    const aScore = a.score ?? -1;
+    const bScore = b.score ?? -1;
+    return bScore - aScore;
   });
 
   // ── Set response headers BEFORE piping ──────────────────────
@@ -261,7 +304,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
     .fontSize(8)
     .fillColor(CLR_BODY)
     .text(
-      `Date : ${exportDate}     |     ${candidates.length} candidat${candidates.length > 1 ? "s" : ""} evalue${candidates.length > 1 ? "s" : ""}`,
+      `Date : ${exportDate}     |     ${candidates.length} candidat${candidates.length > 1 ? "s" : ""}`,
       MARGIN + 8,
       currentY + 6,
       { width: CONTENT_WIDTH - 16 }
@@ -275,7 +318,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
       .fontSize(11)
       .fillColor(CLR_MUTED)
       .text(
-        "Aucun candidat avec le statut SCORED.",
+        "Aucun candidat trouvé pour cette offre.",
         MARGIN,
         currentY + 20,
         { width: CONTENT_WIDTH, align: "center" }
@@ -283,15 +326,41 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
   } else {
     currentY = drawTableHeader(doc, currentY);
 
+    let isRejectedSectionStarted = false;
+
     candidates.forEach((candidate, index) => {
       const fullName =
         [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") ||
         "Nom inconnu";
+      const isRejected = REJECTED_STATUSES.has(candidate.status);
       const scoreText =
         candidate.score !== null ? `${candidate.score}` : "–";
-      const recap = buildRecapText(candidate.scoreExplanation);
+      const recap = isRejected
+        ? `Statut : ${candidate.status === "REJECTED" ? "Rejeté" : "Échoué"}`
+        : (!candidate.scoreExplanation || candidate.score === null)
+          ? `Statut : ${getStatusLabel(candidate.status)}`
+          : buildRecapText(candidate.scoreExplanation);
       const explanation = candidate.scoreExplanation as Partial<ScoreExplanation> | null;
-      const verdictLabel = getVerdictLabel(explanation?.verdict);
+      const verdictLabel = isRejected ? "" : getVerdictLabel(explanation?.verdict);
+
+      // Insert a "Rejected" section divider before the first rejected candidate
+      if (isRejected && !isRejectedSectionStarted) {
+        isRejectedSectionStarted = true;
+        const dividerH = 24;
+        if (currentY + dividerH > FOOTER_Y - 15) {
+          doc.addPage();
+          currentY = MARGIN;
+        }
+        doc.rect(MARGIN, currentY, CONTENT_WIDTH, dividerH).fill("#fef2f2");
+        doc
+          .fontSize(9)
+          .fillColor(CLR_SCORE_LOW)
+          .text("— Candidats rejetés / échoués —", MARGIN, currentY + 7, {
+            width: CONTENT_WIDTH,
+            align: "center",
+          });
+        currentY += dividerH;
+      }
 
       // Calculate height needed for recap text (using 7.5pt)
       doc.fontSize(7.5);
@@ -309,9 +378,11 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
         currentY = drawTableHeader(doc, currentY);
       }
 
-      // Alternate row background
+      // Alternate row background (use reddish tint for rejected)
       if (index % 2 === 0) {
-        doc.rect(MARGIN, currentY, CONTENT_WIDTH, rowHeight).fill(CLR_ROW_ALT);
+        doc
+          .rect(MARGIN, currentY, CONTENT_WIDTH, rowHeight)
+          .fill(isRejected ? "#fef2f2" : CLR_ROW_ALT);
       }
 
       const textY = currentY + ROW_PAD;
@@ -328,7 +399,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
       // ── Full name ──
       doc
         .fontSize(8.5)
-        .fillColor(CLR_BODY)
+        .fillColor(isRejected ? CLR_MUTED : CLR_BODY)
         .text(fullName, COL_NAME_X + 4, textY + 2, {
           width: COL_NAME_W - 8,
         });
@@ -336,7 +407,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
       // ── Score (large number) ──
       doc
         .fontSize(12)
-        .fillColor(getScoreColor(candidate.score))
+        .fillColor(isRejected ? CLR_MUTED : getScoreColor(candidate.score))
         .text(scoreText, COL_SCORE_X + 2, textY, {
           width: COL_SCORE_W - 4,
           align: "center",
@@ -356,7 +427,7 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
       // ── Recap (multiline, structured) ──
       doc
         .fontSize(7.5)
-        .fillColor(CLR_RECAP)
+        .fillColor(isRejected ? CLR_MUTED : CLR_RECAP)
         .text(recap, COL_RECAP_X + 6, textY, {
           width: COL_RECAP_W - 12,
           lineGap: 1.5,
@@ -375,11 +446,17 @@ export const exportJobPdf = catchAsync(async (req: Request, res: Response) => {
   }
 
   // ── Footers on all pages ────────────────────────────────────
-  const totalPages = doc.bufferedPageRange().count;
+  const range = doc.bufferedPageRange();
+  const totalPages = range.count;
   for (let i = 0; i < totalPages; i++) {
     doc.switchToPage(i);
     drawFooter(doc, i + 1, totalPages);
   }
+
+  // Flush any text positioning side‑effects that switchToPage + text() caused.
+  // By switching back to the last real page, doc.end() will NOT append an
+  // extra blank page.
+  doc.switchToPage(totalPages - 1);
 
   // Finalize the PDF
   doc.end();

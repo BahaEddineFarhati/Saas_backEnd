@@ -200,9 +200,120 @@ async function main() {
   await prisma.candidate.createMany({ data: scoredCandidates });
   console.log("   ✓ 50 SCORED candidates created (scores 40-98)\n");
 
-  // ── Exclusion test: FAILED + PENDING candidates ─────────────
-  console.log("📌 Creating FAILED and PENDING candidates (should be excluded from PDF)...");
+  // ── REJECTED candidates (scored then rejected) ───────────────
+  console.log("📌 Creating REJECTED candidates (with scores)...");
+  await prisma.candidate.createMany({
+    data: [
+      {
+        firstName: "Marc",
+        lastName: "Lefèvre",
+        email: "marc.lefevre@example.com",
+        rawFileUrl: "s3://test-bucket/cv-rejected-1.pdf",
+        score: 72,
+        scoreExplanation: generateScoreExplanation(72),
+        summary: "Bon profil mais rejeté après entretien technique.",
+        status: "REJECTED",
+        jobOpeningId: testJob.id,
+      },
+      {
+        firstName: "Nathalie",
+        lastName: "Duval",
+        email: "nathalie.duval@example.com",
+        rawFileUrl: "s3://test-bucket/cv-rejected-2.pdf",
+        score: 55,
+        scoreExplanation: generateScoreExplanation(55),
+        summary: "Profil moyen, rejeté par le manager.",
+        status: "REJECTED",
+        jobOpeningId: testJob.id,
+      },
+      {
+        firstName: "Karim",
+        lastName: "Benali",
+        email: "karim.benali@example.com",
+        rawFileUrl: "s3://test-bucket/cv-rejected-3.pdf",
+        score: 38,
+        scoreExplanation: generateScoreExplanation(38),
+        summary: "Score trop faible, rejeté automatiquement.",
+        status: "REJECTED",
+        jobOpeningId: testJob.id,
+      },
+    ],
+  });
+  console.log("   ✓ 3 REJECTED candidates created (scores: 72, 55, 38)\n");
 
+  // ── SHORTLISTED candidates ──────────────────────────────────
+  console.log("📌 Creating SHORTLISTED candidates...");
+  await prisma.candidate.createMany({
+    data: [
+      {
+        firstName: "Isabelle",
+        lastName: "Morel",
+        email: "isabelle.morel@example.com",
+        rawFileUrl: "s3://test-bucket/cv-shortlisted-1.pdf",
+        score: 91,
+        scoreExplanation: generateScoreExplanation(91),
+        summary: "Excellent profil, shortlistée pour entretien final.",
+        status: "SHORTLISTED",
+        jobOpeningId: testJob.id,
+      },
+      {
+        firstName: "David",
+        lastName: "Chen",
+        email: "david.chen@example.com",
+        rawFileUrl: "s3://test-bucket/cv-shortlisted-2.pdf",
+        score: 84,
+        scoreExplanation: generateScoreExplanation(84),
+        summary: "Très bon profil technique, retenu pour la suite.",
+        status: "SHORTLISTED",
+        jobOpeningId: testJob.id,
+      },
+    ],
+  });
+  console.log("   ✓ 2 SHORTLISTED candidates created (scores: 91, 84)\n");
+
+  // ── NEW candidates (just uploaded, not yet processed) ───────
+  console.log("📌 Creating NEW candidates...");
+  await prisma.candidate.createMany({
+    data: [
+      {
+        firstName: "Sarah",
+        lastName: "Johnson",
+        email: "sarah.johnson@example.com",
+        rawFileUrl: "s3://test-bucket/cv-new-1.pdf",
+        status: "NEW",
+        jobOpeningId: testJob.id,
+      },
+      {
+        firstName: "Ahmed",
+        lastName: "Khadiri",
+        email: "ahmed.khadiri@example.com",
+        rawFileUrl: "s3://test-bucket/cv-new-2.pdf",
+        status: "NEW",
+        jobOpeningId: testJob.id,
+      },
+    ],
+  });
+  console.log("   ✓ 2 NEW candidates created (no score)\n");
+
+  // ── OFFERED candidates ──────────────────────────────────────
+  console.log("📌 Creating OFFERED candidate...");
+  await prisma.candidate.create({
+    data: {
+      firstName: "Lucie",
+      lastName: "Fontaine",
+      email: "lucie.fontaine@example.com",
+      rawFileUrl: "s3://test-bucket/cv-offered-1.pdf",
+      score: 95,
+      scoreExplanation: generateScoreExplanation(95),
+      summary: "Profil exceptionnel, offre envoyée.",
+      status: "OFFERED",
+      jobOpeningId: testJob.id,
+    },
+  });
+  console.log("   ✓ 1 OFFERED candidate created (score: 95)\n");
+
+  // ── FAILED candidates ───────────────────────────────────────
+  console.log("📌 Creating FAILED candidates...");
   await prisma.candidate.createMany({
     data: [
       {
@@ -219,6 +330,14 @@ async function main() {
         status: "FAILED",
         jobOpeningId: testJob.id,
       },
+    ],
+  });
+  console.log("   ✓ 2 FAILED candidates created (no score)\n");
+
+  // ── PENDING candidates ──────────────────────────────────────
+  console.log("📌 Creating PENDING candidates...");
+  await prisma.candidate.createMany({
+    data: [
       {
         firstName: "En",
         lastName: "Attente",
@@ -226,23 +345,25 @@ async function main() {
         status: "PENDING",
         jobOpeningId: testJob.id,
       },
+      {
+        firstName: "Paul",
+        lastName: "Mercier",
+        email: "paul.mercier@example.com",
+        rawFileUrl: "s3://test-bucket/cv-pending-2.pdf",
+        status: "PENDING",
+        jobOpeningId: testJob.id,
+      },
     ],
   });
-  console.log("   ✓ 2 FAILED + 1 PENDING candidates created\n");
+  console.log("   ✓ 2 PENDING candidates created (no score)\n");
 
   // ── Summary ─────────────────────────────────────────────────
-  const totalCandidates = await prisma.candidate.count({
+  const statusCounts = await prisma.candidate.groupBy({
+    by: ["status"],
     where: { jobOpeningId: testJob.id },
+    _count: true,
   });
-  const scoredCount = await prisma.candidate.count({
-    where: { jobOpeningId: testJob.id, status: "SCORED" },
-  });
-  const failedCount = await prisma.candidate.count({
-    where: { jobOpeningId: testJob.id, status: "FAILED" },
-  });
-  const pendingCount = await prisma.candidate.count({
-    where: { jobOpeningId: testJob.id, status: "PENDING" },
-  });
+  const totalCandidates = statusCounts.reduce((sum, s) => sum + s._count, 0);
 
   console.log("════════════════════════════════════════════════════");
   console.log("✅ SEED COMPLETE");
@@ -250,9 +371,11 @@ async function main() {
   console.log(`   Job ID:    ${testJob.id}`);
   console.log(`   Job Title: ${testJob.title}`);
   console.log(`   Total candidates: ${totalCandidates}`);
-  console.log(`     - SCORED:  ${scoredCount} (included in PDF)`);
-  console.log(`     - FAILED:  ${failedCount} (excluded from PDF)`);
-  console.log(`     - PENDING: ${pendingCount} (excluded from PDF)`);
+  statusCounts
+    .sort((a, b) => a.status.localeCompare(b.status))
+    .forEach((s) => {
+      console.log(`     - ${s.status.padEnd(12)} ${s._count}`);
+    });
   console.log();
   console.log(`🔗 Open in app: http://localhost:3000/candidatures/${testJob.id}`);
   console.log(`📥 Test PDF:    GET http://localhost:3001/api/v1/jobs/${testJob.id}/export/pdf`);
