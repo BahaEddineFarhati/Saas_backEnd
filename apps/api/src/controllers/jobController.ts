@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { CandidateStatus } from "@prisma/client";
+import { CandidateStatus, Candidate } from "@prisma/client";
 import { catchAsync } from "@/utils/catchAsync";
 import * as jobService from "@/services/jobService";
 import { AppError } from "@/utils/AppError";
@@ -447,10 +447,18 @@ export const getCandidates = catchAsync(async (req: Request, res: Response) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
 
+  // Read excludeId query param for candidate picker
+  const excludeId = req.query.excludeId as string | undefined;
+
   // Build query filter
   const where: any = {
     jobOpeningId: jobId,
   };
+
+  // Exclude a specific candidate (used by comparison picker)
+  if (excludeId) {
+    where.id = { not: excludeId };
+  }
 
   if (status) {
     // Validate status value
@@ -586,6 +594,63 @@ export const getScoringStatus = catchAsync(async (req: Request, res: Response) =
 });
 
 /**
+ * Format a raw Candidate record into the full detail shape returned by the API.
+ * Shared by getCandidateById and compareCandidates.
+ */
+function formatCandidateDetail(candidate: Candidate) {
+  const parsedJson = candidate.parsedJson as Record<string, unknown> | null;
+  const profile = parsedJson ?? {};
+  const phone = parsedJson?.phone ?? parsedJson?.telephone ?? null;
+
+  const scoreExplanation = candidate.scoreExplanation as Record<string, unknown> | null;
+  const scoring = {
+    score: candidate.score,
+    verdict: typeof scoreExplanation?.verdict === "string" ? scoreExplanation.verdict : null,
+    matchedCriteria: Array.isArray(scoreExplanation?.matchedCriteria)
+      ? scoreExplanation?.matchedCriteria
+      : [],
+    missingCriteria: Array.isArray(scoreExplanation?.missingCriteria)
+      ? scoreExplanation?.missingCriteria
+      : [],
+    strengths: Array.isArray(scoreExplanation?.strengths)
+      ? scoreExplanation?.strengths
+      : [],
+  };
+
+  const interviewQuestions = Array.isArray(candidate.interviewQuestions)
+    ? (candidate.interviewQuestions as Array<unknown>).map((item) => {
+        if (typeof item === "object" && item !== null) {
+          const question = (item as Record<string, unknown>).question;
+          const rationale = (item as Record<string, unknown>).rationale;
+          return {
+            question: typeof question === "string" ? question : "",
+            rationale: typeof rationale === "string" ? rationale : "",
+          };
+        }
+        return { question: "", rationale: "" };
+      })
+    : [];
+
+  return {
+    id: candidate.id,
+    firstName: candidate.firstName,
+    lastName: candidate.lastName,
+    email: candidate.email,
+    phone,
+    status: candidate.status,
+    score: candidate.score,
+    createdAt: candidate.createdAt,
+    cv: {
+      rawFileUrl: candidate.rawFileUrl,
+    },
+    profile,
+    scoring,
+    summary: candidate.summary,
+    interviewQuestions,
+  };
+}
+
+/**
  * GET /api/v1/jobs/:jobId/candidates/:candidateId
  * Get full details of a single candidate including parsed CV data
  *
@@ -644,58 +709,87 @@ export const getCandidateById = catchAsync(
       throw new AppError("Candidate not found", 404, "NOT_FOUND");
     }
 
-    const parsedJson = candidate.parsedJson as Record<string, unknown> | null;
-    const profile = parsedJson ?? {};
-    const phone = parsedJson?.phone ?? parsedJson?.telephone ?? null;
+    res.status(200).json({
+      success: true,
+      data: formatCandidateDetail(candidate),
+    });
+  }
+);
 
-    const scoreExplanation = candidate.scoreExplanation as Record<string, unknown> | null;
-    const scoring = {
-      score: candidate.score,
-      verdict: typeof scoreExplanation?.verdict === "string" ? scoreExplanation.verdict : null,
-      matchedCriteria: Array.isArray(scoreExplanation?.matchedCriteria)
-        ? scoreExplanation?.matchedCriteria
-        : [],
-      missingCriteria: Array.isArray(scoreExplanation?.missingCriteria)
-        ? scoreExplanation?.missingCriteria
-        : [],
-      strengths: Array.isArray(scoreExplanation?.strengths)
-        ? scoreExplanation?.strengths
-        : [],
-    };
+/**
+ * GET /api/v1/jobs/:jobId/candidates/compare?ids=id1,id2
+ * Compare exactly two candidates side by side.
+ * Both must belong to the specified job opening and the caller's organisation.
+ *
+ * Returns an array of exactly 2 full candidate objects (same shape as getCandidateById).
+ * Returns 400 if fewer or more than 2 IDs are provided.
+ * Returns 404 if either candidate is not found or doesn't belong to the job/organisation.
+ */
+export const compareCandidates = catchAsync(
+  async (req: Request, res: Response) => {
+    const jobId = req.params.jobId;
+    const organisationId = req.user?.organisationId;
 
-    const interviewQuestions = Array.isArray(candidate.interviewQuestions)
-      ? (candidate.interviewQuestions as Array<unknown>).map((item) => {
-          if (typeof item === "object" && item !== null) {
-            const question = (item as Record<string, unknown>).question;
-            const rationale = (item as Record<string, unknown>).rationale;
-            return {
-              question: typeof question === "string" ? question : "",
-              rationale: typeof rationale === "string" ? rationale : "",
-            };
-          }
-          return { question: "", rationale: "" };
-        })
-      : [];
+    if (!organisationId) {
+      throw new AppError("User not authenticated", 401, "UNAUTHORIZED");
+    }
+
+    // Parse and validate the ids query parameter
+    const idsParam = req.query.ids as string | undefined;
+    if (!idsParam) {
+      throw new AppError(
+        "Exactly 2 candidate IDs are required (ids query parameter is missing)",
+        400,
+        "VALIDATION_ERROR"
+      );
+    }
+
+    const ids = idsParam.split(",").map((id) => id.trim()).filter(Boolean);
+    if (ids.length !== 2) {
+      throw new AppError(
+        `Exactly 2 candidate IDs are required, but ${ids.length} provided`,
+        400,
+        "VALIDATION_ERROR"
+      );
+    }
+
+    // Verify job exists and belongs to organisation
+    const job = await prisma.jobOpening.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    if (job.organisationId !== organisationId) {
+      throw new AppError("Job not found", 404, "NOT_FOUND");
+    }
+
+    // Fetch both candidates — they must belong to this job
+    const candidates = await prisma.candidate.findMany({
+      where: {
+        id: { in: ids },
+        jobOpeningId: jobId,
+      },
+    });
+
+    if (candidates.length !== 2) {
+      throw new AppError(
+        "One or both candidates not found in this job opening",
+        404,
+        "NOT_FOUND"
+      );
+    }
+
+    // Return in the same order as requested
+    const orderedCandidates = ids.map((id) =>
+      candidates.find((c) => c.id === id)!
+    );
 
     res.status(200).json({
       success: true,
-      data: {
-        id: candidate.id,
-        firstName: candidate.firstName,
-        lastName: candidate.lastName,
-        email: candidate.email,
-        phone,
-        status: candidate.status,
-        score: candidate.score,
-        createdAt: candidate.createdAt,
-        cv: {
-          rawFileUrl: candidate.rawFileUrl,
-        },
-        profile,
-        scoring,
-        summary: candidate.summary,
-        interviewQuestions,
-      },
+      data: orderedCandidates.map(formatCandidateDetail),
     });
   }
 );
