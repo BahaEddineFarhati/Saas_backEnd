@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
 import * as authService from "@/services/authService";
+import * as passwordResetService from "@/services/passwordResetService";
 import type { LoginResponse, RefreshTokenResponse } from "@/types";
 import { prisma } from "@/lib/prisma";
 
@@ -203,6 +204,41 @@ export const acceptInviteController = catchAsync(async (req: Request, res: Respo
     success: true,
     data: result,
   });
+});
+
+/**
+ * POST /api/v1/auth/forgot-password
+ * Public endpoint to request a password reset email.
+ */
+export const forgotPasswordController = catchAsync(async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ success: false, error: { message: "Email is required", code: "INVALID_INPUT" } });
+    return;
+  }
+
+  // Best-effort: request reset (function is silent if user not found or inactive)
+  await passwordResetService.requestPasswordReset(email);
+
+  res.status(200).json({ success: true, message: "Si un compte existe avec cette adresse, un email de réinitialisation a été envoyé." });
+});
+
+/**
+ * POST /api/v1/auth/reset-password
+ * Public endpoint to consume a reset token and set a new password.
+ */
+export const resetPasswordController = catchAsync(async (req: Request, res: Response) => {
+  const { token, newPassword, confirmNewPassword } = req.body;
+
+  if (!token || !newPassword || !confirmNewPassword) {
+    res.status(400).json({ success: false, error: { message: "token, newPassword and confirmNewPassword are required", code: "INVALID_INPUT" } });
+    return;
+  }
+
+  await passwordResetService.consumePasswordReset(token, newPassword, confirmNewPassword);
+
+  res.status(200).json({ success: true, message: "Mot de passe réinitialisé avec succès." });
 });
 
 /**

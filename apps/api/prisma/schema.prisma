@@ -45,6 +45,7 @@ model User {
   jobOpenings    JobOpening[] @relation("CreatedBy")
   refreshTokens  RefreshToken[]
   notifications  Notification[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
   @@index([organisationId])
@@ -137,6 +138,20 @@ model InviteToken {
   @@index([email])
   @@index([organisationId])
   @@map("invite_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 enum Plan {
