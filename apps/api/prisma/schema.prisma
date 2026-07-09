@@ -45,6 +45,7 @@ model User {
   jobOpenings    JobOpening[] @relation("CreatedBy")
   refreshTokens  RefreshToken[]
   notifications  Notification[]
+  chatSessions   ChatSession[]
 
   @@index([email])
   @@index([organisationId])
@@ -65,6 +66,7 @@ model JobOpening {
   createdBy     User         @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   candidates    Candidate[]
   notifications Notification[]
+  chatSessions  ChatSession[]
 
   @@index([organisationId])
   @@map("job_openings")
@@ -170,4 +172,38 @@ enum CandidateStatus {
 enum NotificationType {
   JOB_PARSING_COMPLETED
   JOB_PARSING_FAILED
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+}
+
+model ChatSession {
+  id           String        @id @default(cuid())
+  jobOpeningId String
+  userId       String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  jobOpening   JobOpening    @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+
+  @@unique([userId, jobOpeningId])
+  @@index([jobOpeningId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String          @id @default(cuid())
+  sessionId String
+  role      ChatMessageRole
+  content   String          @db.Text
+  createdAt DateTime        @default(now())
+
+  session   ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
 }

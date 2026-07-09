@@ -102,3 +102,80 @@ export async function callLLM(prompt: string, systemPrompt: string): Promise<str
 
   return callLocal(prompt, systemPrompt);
 }
+
+/**
+ * Multi-turn chat LLM call.
+ * Accepts a full conversation history in addition to a system prompt.
+ * Uses temperature 0.3 for more natural conversational responses.
+ *
+ * @param systemPrompt - Grounded system prompt (job context)
+ * @param messages     - Full conversation history: user + assistant turns
+ */
+export async function callLLMChat(
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>
+): Promise<string> {
+  const provider = process.env.LLM_PROVIDER ?? "local";
+  const fullMessages: OpenAIMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
+
+  if (provider === "cloud") {
+    return callCloudChat(fullMessages);
+  }
+
+  return callLocalChat(fullMessages);
+}
+
+// ── Internal multi-turn helpers ─────────────────────────────────────────────
+
+async function callCloudChat(messages: OpenAIMessage[]): Promise<string> {
+  const apiUrl = process.env.LLM_API_URL;
+  const model = process.env.LLM_MODEL;
+  const apiKey = process.env.LLM_API_KEY;
+
+  if (!apiUrl || !model || !apiKey) {
+    throw new Error(
+      "Cloud LLM requires LLM_API_URL, LLM_MODEL, and LLM_API_KEY environment variables."
+    );
+  }
+
+  const body: OpenAIRequest = { model, messages, temperature: 0.3 };
+
+  const response = await axios.post<OpenAIResponse>(
+    `${apiUrl.replace(/\/$/, "")}/chat/completions`,
+    body,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      timeout: 360_000,
+    }
+  );
+
+  const content = response.data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Empty response from cloud LLM.");
+  return content;
+}
+
+async function callLocalChat(messages: OpenAIMessage[]): Promise<string> {
+  const baseUrl = process.env.LLM_LOCAL_URL ?? "http://localhost:11434";
+  const model = process.env.LLM_LOCAL_MODEL ?? "llama3";
+
+  const body: OpenAIRequest = { model, messages, temperature: 0.3 };
+
+  const response = await axios.post<OpenAIResponse>(
+    `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`,
+    body,
+    {
+      headers: { "Content-Type": "application/json" },
+      timeout: 360_000,
+    }
+  );
+
+  const content = response.data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Empty response from local LLM.");
+  return content;
+}
