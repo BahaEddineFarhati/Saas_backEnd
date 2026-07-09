@@ -6,6 +6,7 @@ import organisationRoutes from "@/routes/organisationRoutes";
 import adminRoutes from "@/routes/adminRoutes";
 import dashboardRoutes from "@/routes/dashboardRoutes";
 import notificationRoutes from "@/routes/notificationRoutes";
+import profileRoutes from "@/routes/profileRoutes";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { requireSuperAdmin } from "@/middleware/requireSuperAdmin";
 
@@ -85,6 +86,15 @@ router.use("/dashboard", dashboardRoutes);
  * Protected: requires authentication
  */
 router.use("/notifications", verifyAuthToken, notificationRoutes);
+
+/**
+ * Mount profile routes at /profile
+ * GET    /api/v1/profile
+ * PATCH  /api/v1/profile
+ * PATCH  /api/v1/profile/password
+ * Protected: requires authentication
+ */
+router.use("/profile", verifyAuthToken, profileRoutes);
 
 /**
  * Mount super admin routes at /admin
