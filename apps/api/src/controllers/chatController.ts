@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { ChatMessageRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { callLLMChat } from "@/lib/llm";
+import { callLLM } from "@/lib/llm";
 import { buildChatContext } from "@/services/chatContext.service";
 import { AppError } from "@/utils/AppError";
 import { catchAsync } from "@/utils/catchAsync";
@@ -166,7 +166,10 @@ export const sendMessage = catchAsync(
       content: m.content,
     }));
 
-    const assistantContent = await callLLMChat(systemPrompt, conversationHistory);
+    const assistantContent = await callLLM("", systemPrompt, {
+      messages: conversationHistory,
+      temperature: 0.3,
+    });
 
     // ── Save assistant response ──────────────────────────────────────────────
     const assistantMessage = await prisma.chatMessage.create({
