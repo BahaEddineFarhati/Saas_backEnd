@@ -1,2 +1,2 @@
--- AlterTable
-ALTER TABLE "users" ADD COLUMN     "departureStatus" TEXT;
+-- AlterTable (idempotent)
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "departureStatus" TEXT;

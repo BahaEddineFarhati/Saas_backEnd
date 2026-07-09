@@ -119,3 +119,95 @@ export const sendInviteEmail = async (params: InviteEmailParams): Promise<void> 
       `  Invite link for ${to}: ${inviteLink}`
   );
 };
+
+interface PasswordResetEmailParams {
+  to: string;
+  firstName: string;
+  token: string;
+}
+
+export const sendPasswordResetEmail = async (params: PasswordResetEmailParams): Promise<void> => {
+  const { to, firstName, token } = params;
+  const fromEmail = process.env.BREVO_FROM_EMAIL ?? "noreply@linkup.app";
+  const fromName = process.env.BREVO_FROM_NAME ?? "LinkUp";
+  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
+
+  const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  const subject = `Réinitialisation de votre mot de passe LinkUp`;
+  const text = `Bonjour ${firstName},\n\nVous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe (valable 1 heure): ${resetLink}\n\nSi le lien ne fonctionne pas, vous pouvez copier ce jeton et le coller sur la page de réinitialisation: ${token}\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.`;
+  const html = `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px;">
+      <h2 style="color:#1a1a2e;">Réinitialisation de votre mot de passe</h2>
+      <p style="color:#444;line-height:1.6;">Bonjour ${firstName},</p>
+      <p style="color:#444;line-height:1.6;">Vous avez demandé la réinitialisation de votre mot de passe. Le lien suivant expire dans 1 heure.</p>
+      <p style="margin:32px 0;text-align:center;">
+        <a href="${resetLink}"
+           style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#7c3aed,#ec4899);
+                  color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+          Réinitialiser mon mot de passe
+        </a>
+      </p>
+      <p style="color:#888;font-size:13px;">Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+      <p style="color:#6B7280;font-size:12px;">
+        <a href="${resetLink}" style="color:#7c3aed;">${resetLink}</a>
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+      <p style="color:#aaa;font-size:12px;">LinkUp — AI-Powered Recruitment Platform</p>
+    </div>
+  `;
+
+  // Use same Brevo sending strategy as invite email
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": process.env.BREVO_API_KEY,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: fromEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(JSON.stringify(errData));
+      }
+
+      console.log(`📧 Password reset email sent via Brevo API to ${to}`);
+      return;
+    } catch (error) {
+      console.error("❌ Failed to send password reset email via Brevo API:", error);
+      console.warn(`[emailService] Password reset API failed for ${to}.`);
+      return;
+    }
+  }
+
+  if (process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS) {
+    try {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to,
+        subject,
+        text,
+        html,
+      });
+      console.log(`📧 Password reset email sent via SMTP to ${to}`);
+      return;
+    } catch (error) {
+      console.error("❌ Failed to send password reset email via SMTP:", error);
+      console.warn(`[emailService] SMTP failed for password reset to ${to}.`);
+      return;
+    }
+  }
+
+  console.warn(`[emailService] Neither Brevo API Key nor SMTP configured — skipping password reset send for ${to}.
+  Reset link: ${resetLink}`);
+};
