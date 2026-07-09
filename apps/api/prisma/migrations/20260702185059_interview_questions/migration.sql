@@ -1,2 +1,2 @@
--- This migration was a duplicate of 20260702110405_new_ticket (same ALTER TABLE).
--- Emptied to fix shadow database replay. The column already exists from the earlier migration.
+-- AlterTable (idempotent)
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "departureStatus" TEXT;

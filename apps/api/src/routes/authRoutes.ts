@@ -7,6 +7,8 @@ import {
   refreshTokenController,
   acceptInviteController,
   meController,
+  forgotPasswordController,
+  resetPasswordController,
 } from "@/controllers/authController";
 
 const router = Router();
@@ -35,6 +37,16 @@ router.post("/refresh", catchAsync(refreshTokenController));
  * Accept an invite and create a user account (public, no auth required)
  */
 router.post("/accept-invite", catchAsync(acceptInviteController));
+
+/**
+ * POST /api/v1/auth/forgot-password
+ */
+router.post("/forgot-password", catchAsync(forgotPasswordController));
+
+/**
+ * POST /api/v1/auth/reset-password
+ */
+router.post("/reset-password", catchAsync(resetPasswordController));
 
 /**
  * GET /api/v1/auth/me
