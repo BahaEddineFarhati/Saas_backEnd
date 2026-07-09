@@ -130,11 +130,11 @@ export const sendPasswordResetEmail = async (params: PasswordResetEmailParams): 
   const { to, firstName, token } = params;
   const fromEmail = process.env.BREVO_FROM_EMAIL ?? "noreply@linkup.app";
   const fromName = process.env.BREVO_FROM_NAME ?? "LinkUp";
-  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
+  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
 
   const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
   const subject = `Réinitialisation de votre mot de passe LinkUp`;
-  const text = `Bonjour ${firstName},\n\nVous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe (valable 1 heure): ${resetLink}\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.`;
+  const text = `Bonjour ${firstName},\n\nVous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe (valable 1 heure): ${resetLink}\n\nSi le lien ne fonctionne pas, vous pouvez copier ce jeton et le coller sur la page de réinitialisation: ${token}\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet email.`;
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px;">
       <h2 style="color:#1a1a2e;">Réinitialisation de votre mot de passe</h2>
