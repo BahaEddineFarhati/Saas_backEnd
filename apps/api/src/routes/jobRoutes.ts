@@ -8,6 +8,7 @@ import {
   downloadCandidateCv,
   getCandidates,
   getCandidateById,
+  compareCandidates,
   updateCandidateStatus,
   getScoringStatus,
   deleteCandidate,
@@ -49,6 +50,14 @@ router.get("/:jobId/scoring-status", verifyAuthToken, blockSuperAdmin, getScorin
  * Protected: requires authentication
  */
 router.get("/:jobId/candidates", verifyAuthToken, blockSuperAdmin, getCandidates);
+
+/**
+ * GET /api/v1/jobs/:jobId/candidates/compare?ids=id1,id2
+ * Compare exactly two candidates side by side
+ * Returns an array of exactly 2 full candidate objects
+ * Protected: requires authentication
+ */
+router.get("/:jobId/candidates/compare", verifyAuthToken, blockSuperAdmin, compareCandidates);
 
 /**
  * GET /api/v1/jobs/:jobId/candidates/:candidateId
