@@ -161,27 +161,85 @@ export const sendMessage = catchAsync(
     // ── Build chat context and call LLM ─────────────────────────────────────
     const systemPrompt = await buildChatContext(jobId);
 
-    const conversationHistory = history.map((m) => ({
-      role: m.role === ChatMessageRole.USER ? ("user" as const) : ("assistant" as const),
-      content: m.content,
-    }));
+    // Append suggestion instruction so the LLM returns follow-up questions
+    const suggestionsInstruction =
+      '\n\nAfter your response, on the very last line, output exactly: SUGGESTIONS:["question 1","question 2"]\n' +
+      "These should be 2 short follow-up questions (under 60 characters each) the recruiter might want to ask YOU (the AI assistant) next about the candidates. " +
+      "Write them in the third person, asking about the candidates (e.g., 'Quel est le score de Marie ?' or 'Quelle est l'expérience de Jean ?' " +
+      "instead of direct interview questions like 'Quelle est votre expérience ?'). " +
+      "Do not include this line in your main response text. " +
+      "IMPORTANT: You MUST respond in the exact same language as the user's prompt (if the user writes in French, respond in French).";
 
-    const assistantContent = await callLLM("", systemPrompt, {
+    const conversationHistory = history.map((m, idx) => {
+      let content = m.content;
+      // Reinforce the instruction by appending it to the very last user message in the context
+      if (idx === history.length - 1 && m.role === ChatMessageRole.USER) {
+        content +=
+          "\n\n(Remember: You MUST respond in the same language as my prompt (French). At the end of your response, you MUST provide 2 short follow-up questions for the recruiter to ask YOU about the candidates. " +
+          "Write them in the third person asking about candidates. " +
+          'Output them exactly in this format on the last line: SUGGESTIONS:["question 1","question 2"] or list them as bullets starting with SUGGESTIONS:)';
+      }
+      return {
+        role: m.role === ChatMessageRole.USER ? ("user" as const) : ("assistant" as const),
+        content,
+      };
+    });
+
+    const assistantContent = await callLLM("", systemPrompt + suggestionsInstruction, {
       messages: conversationHistory,
       temperature: 0.3,
     });
+
+    // ── Parse suggestions from the LLM response (robust hybrid parser) ──────
+    let cleanContent = assistantContent;
+    let suggestions: string[] | undefined;
+
+    const matchIndex = assistantContent.search(/SUGGESTIONS:/i);
+    if (matchIndex !== -1) {
+      const mainResponse = assistantContent.slice(0, matchIndex).trim();
+      const suggestionsSection = assistantContent.slice(matchIndex + "SUGGESTIONS:".length).trim();
+
+      // Check if it's a JSON array
+      if (suggestionsSection.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(suggestionsSection);
+          if (Array.isArray(parsed) && parsed.every((s: unknown) => typeof s === "string")) {
+            suggestions = parsed.slice(0, 2);
+          }
+        } catch {
+          // Fall back to line parsing
+        }
+      }
+
+      // If not parsed as JSON, parse it as a markdown bulleted or numbered list
+      if (!suggestions) {
+        const lines = suggestionsSection.split("\n");
+        const listItems: string[] = [];
+        for (const line of lines) {
+          const cleanLine = line.replace(/^\s*[-*•]\s*|^\s*\d+\.\s*/, "").trim();
+          if (cleanLine) {
+            listItems.push(cleanLine);
+          }
+        }
+        if (listItems.length > 0) {
+          suggestions = listItems.slice(0, 2);
+        }
+      }
+
+      cleanContent = mainResponse;
+    }
 
     // ── Save assistant response ──────────────────────────────────────────────
     const assistantMessage = await prisma.chatMessage.create({
       data: {
         sessionId: session.id,
         role: ChatMessageRole.ASSISTANT,
-        content: assistantContent,
+        content: cleanContent,
       },
       select: { id: true, role: true, content: true, createdAt: true },
     });
 
-    res.status(201).json({ message: assistantMessage });
+    res.status(201).json({ message: assistantMessage, suggestions });
   }
 );
 
