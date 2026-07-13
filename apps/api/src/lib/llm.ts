@@ -19,7 +19,21 @@ interface OpenAIResponse {
   }>;
 }
 
-async function callCloud(prompt: string, systemPrompt: string): Promise<string> {
+/**
+ * Options for multi-turn chat or custom temperature settings.
+ * When `messages` is provided, `prompt` is ignored and the full conversation
+ * history is sent to the LLM instead of a single user message.
+ */
+export interface CallLLMOptions {
+  /** Full conversation history (user + assistant turns). When provided, the `prompt` argument is ignored. */
+  messages?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** LLM sampling temperature. Defaults to 0 (deterministic). Use 0.3 for conversational chat. */
+  temperature?: number;
+}
+
+// ── Internal helpers ────────────────────────────────────────────────────────
+
+async function callCloudInternal(messages: OpenAIMessage[], temperature: number): Promise<string> {
   const apiUrl = process.env.LLM_API_URL;
   const model = process.env.LLM_MODEL;
   const apiKey = process.env.LLM_API_KEY;
@@ -35,14 +49,7 @@ async function callCloud(prompt: string, systemPrompt: string): Promise<string> 
   //   LLM_API_URL=https://api.mistral.ai/v1
   //   LLM_MODEL=mistral-small-latest
 
-  const body: OpenAIRequest = {
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0,
-  };
+  const body: OpenAIRequest = { model, messages, temperature };
 
   const response = await axios.post<OpenAIResponse>(
     `${apiUrl.replace(/\/$/, "")}/chat/completions`,
@@ -61,18 +68,11 @@ async function callCloud(prompt: string, systemPrompt: string): Promise<string> 
   return content;
 }
 
-async function callLocal(prompt: string, systemPrompt: string): Promise<string> {
+async function callLocalInternal(messages: OpenAIMessage[], temperature: number): Promise<string> {
   const baseUrl = process.env.LLM_LOCAL_URL ?? "http://localhost:11434";
   const model = process.env.LLM_LOCAL_MODEL ?? "llama3";
 
-  const body: OpenAIRequest = {
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0,
-  };
+  const body: OpenAIRequest = { model, messages, temperature };
 
   const response = await axios.post<OpenAIResponse>(
     `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`,
@@ -88,17 +88,53 @@ async function callLocal(prompt: string, systemPrompt: string): Promise<string> 
   return content;
 }
 
+// ── Public API ──────────────────────────────────────────────────────────────
+
 /**
  * Unified LLM call.  Routing is controlled exclusively by LLM_PROVIDER:
  *   LLM_PROVIDER=cloud  → external API (OpenAI / Mistral / Anthropic compatible)
  *   LLM_PROVIDER=local  → local Ollama instance (OpenAI-compatible endpoint)
+ *
+ * Basic usage (single prompt — CV parsing, scoring):
+ *   callLLM(prompt, systemPrompt)
+ *
+ * Multi-turn chat usage (conversation history):
+ *   callLLM("", systemPrompt, {
+ *     messages: [{ role: "user", content: "..." }, { role: "assistant", content: "..." }],
+ *     temperature: 0.3,
+ *   })
+ *
+ * When `options.messages` is provided, the `prompt` argument is ignored and
+ * the conversation history is used instead.
  */
-export async function callLLM(prompt: string, systemPrompt: string): Promise<string> {
+export async function callLLM(
+  prompt: string,
+  systemPrompt: string,
+  options?: CallLLMOptions
+): Promise<string> {
   const provider = process.env.LLM_PROVIDER ?? "local";
+  const temperature = options?.temperature ?? 0;
 
-  if (provider === "cloud") {
-    return callCloud(prompt, systemPrompt);
+  // Build the messages array
+  let messages: OpenAIMessage[];
+
+  if (options?.messages && options.messages.length > 0) {
+    // Multi-turn chat mode: system prompt + conversation history
+    messages = [
+      { role: "system", content: systemPrompt },
+      ...options.messages,
+    ];
+  } else {
+    // Single-prompt mode: system prompt + one user message (backward compatible)
+    messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ];
   }
 
-  return callLocal(prompt, systemPrompt);
+  if (provider === "cloud") {
+    return callCloudInternal(messages, temperature);
+  }
+
+  return callLocalInternal(messages, temperature);
 }
