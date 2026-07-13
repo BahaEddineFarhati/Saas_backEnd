@@ -21,9 +21,11 @@ model Organisation {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  users        User[]
-  jobOpenings  JobOpening[]
-  inviteTokens InviteToken[]
+  users              User[]
+  jobOpenings        JobOpening[]
+  inviteTokens       InviteToken[]
+  llmUsageLogs       LLMUsageLog[]
+  llmUsageSummaries  LLMUsageSummary[]
 
   @@map("organisations")
 }
@@ -47,6 +49,7 @@ model User {
   notifications  Notification[]
   chatSessions   ChatSession[]
   passwordResetTokens PasswordResetToken[]
+  llmUsageLogs   LLMUsageLog[]
 
   @@index([email])
   @@index([organisationId])
@@ -221,4 +224,55 @@ model ChatMessage {
 
   @@index([sessionId, createdAt])
   @@map("chat_messages")
+}
+
+// ── LLM Usage Tracking ──────────────────────────────────────────────────────
+
+enum LLMFeature {
+  CV_PARSING
+  CV_SCORING
+  CV_ENRICHMENT
+  CHAT
+}
+
+model LLMUsageLog {
+  id               String      @id @default(cuid())
+  organisationId   String
+  userId           String
+  feature          LLMFeature
+  provider         String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  month            Int
+  year             Int
+  createdAt        DateTime    @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, month, year])
+  @@index([userId])
+  @@map("llm_usage_logs")
+}
+
+model LLMUsageSummary {
+  id                 String @id @default(cuid())
+  organisationId     String
+  month              Int
+  year               Int
+  totalTokens        Int    @default(0)
+  promptTokens       Int    @default(0)
+  completionTokens   Int    @default(0)
+  cvParsingTokens    Int    @default(0)
+  cvScoringTokens    Int    @default(0)
+  cvEnrichmentTokens Int    @default(0)
+  chatTokens         Int    @default(0)
+  callCount          Int    @default(0)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, month, year])
+  @@map("llm_usage_summaries")
 }

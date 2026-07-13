@@ -1,6 +1,6 @@
 import { Worker, Job } from "bullmq";
 import mammoth from "mammoth";
-import { CandidateStatus, NotificationType } from "@prisma/client";
+import { CandidateStatus, LLMFeature, NotificationType } from "@prisma/client";
 import { InputJsonValue } from "@prisma/client/runtime/library";
 import { redisConnection, CV_PARSING_QUEUE, cvScoringQueue } from "@/lib/queue";
 import { downloadFile } from "@/lib/storage";
@@ -82,6 +82,16 @@ async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
 
   console.log(`📥 Processing CV for candidate ${candidateId}, file: ${fileUrl}`);
 
+  // Resolve organisationId and userId for LLM usage tracking
+  const candidateMeta = await prisma.candidate.findUnique({
+    where: { id: candidateId },
+    select: { jobOpening: { select: { organisationId: true, createdById: true } } },
+  });
+
+  const usageContext = candidateMeta
+    ? { organisationId: candidateMeta.jobOpening.organisationId, userId: candidateMeta.jobOpening.createdById }
+    : undefined;
+
   const fileBuffer = await downloadFile(fileUrl);
   console.log(`✅ Downloaded file: ${fileBuffer.length} bytes`);
 
@@ -90,7 +100,10 @@ async function processCvJob(job: Job<CvParsingJobData>): Promise<void> {
 
   const llmResponse = await callLLM(
     CV_EXTRACTION_PROMPT(rawText),
-    CV_EXTRACTION_SYSTEM_PROMPT
+    CV_EXTRACTION_SYSTEM_PROMPT,
+    undefined,
+    LLMFeature.CV_PARSING,
+    usageContext
   );
   console.log(`✅ LLM response received: ${llmResponse.length} characters`);
   console.log(`📄 LLM response:\n${llmResponse}`);

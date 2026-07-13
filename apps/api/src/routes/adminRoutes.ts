@@ -8,6 +8,7 @@ import {
   unsuspendOrganisation,
   getStats,
 } from "@/controllers/adminController";
+import usageRoutes from "@/routes/usageRoutes";
 
 const router = Router();
 
@@ -52,5 +53,14 @@ router.post("/organisations/:orgId/suspend", suspendOrganisation);
  * Unsuspend an organisation
  */
 router.post("/organisations/:orgId/unsuspend", unsuspendOrganisation);
+
+/**
+ * Mount LLM usage tracking routes at /usage
+ * GET /api/v1/admin/usage
+ * GET /api/v1/admin/usage/platform-totals
+ * GET /api/v1/admin/usage/:organisationId/history
+ * GET /api/v1/admin/usage/:organisationId/:year/:month
+ */
+router.use("/usage", usageRoutes);
 
 export default router;

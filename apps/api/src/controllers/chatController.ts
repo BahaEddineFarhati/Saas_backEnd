@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { ChatMessageRole } from "@prisma/client";
+import { ChatMessageRole, LLMFeature } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { callLLM } from "@/lib/llm";
 import { buildChatContext } from "@/services/chatContext.service";
@@ -178,7 +178,10 @@ export const sendMessage = catchAsync(
     const assistantContent = await callLLM("", systemPrompt + suggestionsInstruction, {
       messages: conversationHistory,
       temperature: 0.3,
-    });
+    },
+    LLMFeature.CHAT,
+    organisationId ? { organisationId, userId } : undefined
+    );
 
     // ── Parse suggestions from the LLM response (robust hybrid parser) ──────
     let cleanContent = assistantContent;
