@@ -163,25 +163,15 @@ export const sendMessage = catchAsync(
 
     // Append suggestion instruction so the LLM returns follow-up questions
     const suggestionsInstruction =
-      '\n\nAfter your response, on the very last line, output exactly: SUGGESTIONS:["question 1","question 2"]\n' +
-      "These should be 2 short follow-up questions (under 60 characters each) the recruiter might want to ask YOU (the AI assistant) next about the candidates. " +
-      "Write them in the third person, asking about the candidates (e.g., 'Quel est le score de Marie ?' or 'Quelle est l'expérience de Jean ?' " +
-      "instead of direct interview questions like 'Quelle est votre expérience ?'). " +
-      "Do not include this line in your main response text. " +
-      "IMPORTANT: You MUST respond in the exact same language as the user's prompt (if the user writes in French, respond in French).";
+      "\n\n" +
+      "IMPORTANT: You MUST respond in the exact same language as the user (e.g., if the user writes in French, respond in French; if they write in English, respond in English).\n" +
+      "At the very end of your response, on a new line, you MUST output exactly: SUGGESTIONS:[\"question 1\",\"question 2\"]\n" +
+      "These should be exactly 2 short follow-up questions (under 60 characters each, written in the third person, in the same language as your response) that the user might want to ask you next about the candidates.";
 
-    const conversationHistory = history.map((m, idx) => {
-      let content = m.content;
-      // Reinforce the instruction by appending it to the very last user message in the context
-      if (idx === history.length - 1 && m.role === ChatMessageRole.USER) {
-        content +=
-          "\n\n(Remember: You MUST respond in the same language as my prompt (French). At the end of your response, you MUST provide 2 short follow-up questions for the recruiter to ask YOU about the candidates. " +
-          "Write them in the third person asking about candidates. " +
-          'Output them exactly in this format on the last line: SUGGESTIONS:["question 1","question 2"] or list them as bullets starting with SUGGESTIONS:)';
-      }
+    const conversationHistory = history.map((m) => {
       return {
         role: m.role === ChatMessageRole.USER ? ("user" as const) : ("assistant" as const),
-        content,
+        content: m.content,
       };
     });
 

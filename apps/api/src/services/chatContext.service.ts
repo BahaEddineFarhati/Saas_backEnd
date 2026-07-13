@@ -12,6 +12,7 @@ interface WorkExperienceEntry {
 
 interface EducationEntry {
   institution?: string;
+  school?: string;
   degree?: string;
   field?: string;
 }
@@ -81,7 +82,11 @@ function buildCandidateBlock(candidate: {
       ? (() => {
           const edu = parsed.education![0];
           const parts = [edu.degree, edu.field].filter(Boolean).join(" in ");
-          return parts ? `${parts} at ${edu.institution ?? "?"}` : edu.institution ?? "N/A";
+          const inst = edu.institution ?? edu.school;
+          if (parts) {
+            return inst ? `${parts} at ${inst}` : parts;
+          }
+          return inst ?? "N/A";
         })()
       : "N/A";
 
