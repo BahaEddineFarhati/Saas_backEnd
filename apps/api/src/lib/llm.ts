@@ -1,4 +1,6 @@
 import axios from "axios";
+import { LLMFeature } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 interface OpenAIMessage {
   role: "system" | "user" | "assistant";
@@ -11,12 +13,32 @@ interface OpenAIRequest {
   temperature?: number;
 }
 
+interface OpenAIUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 interface OpenAIResponse {
   choices: Array<{
     message: {
       content: string;
     };
   }>;
+  usage?: OpenAIUsage;
+  // Ollama native fields (fallback when OpenAI-compat usage is missing)
+  prompt_eval_count?: number;
+  eval_count?: number;
+}
+
+/** Internal result returned by cloud/local helpers — carries content + token usage. */
+interface LLMInternalResult {
+  content: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 /**
@@ -31,9 +53,35 @@ export interface CallLLMOptions {
   temperature?: number;
 }
 
+/** Context needed to attribute LLM usage to a specific organisation and user. */
+export interface LLMUsageContext {
+  organisationId: string;
+  userId: string;
+}
+
 // ── Internal helpers ────────────────────────────────────────────────────────
 
-async function callCloudInternal(messages: OpenAIMessage[], temperature: number): Promise<string> {
+function extractUsage(data: OpenAIResponse): LLMInternalResult["usage"] {
+  // Cloud providers (OpenAI, Mistral, Anthropic) and Ollama's OpenAI-compat endpoint
+  if (data.usage) {
+    return {
+      promptTokens: data.usage.prompt_tokens ?? 0,
+      completionTokens: data.usage.completion_tokens ?? 0,
+      totalTokens: data.usage.total_tokens ?? 0,
+    };
+  }
+
+  // Ollama native response fields (fallback)
+  const promptTokens = data.prompt_eval_count ?? 0;
+  const completionTokens = data.eval_count ?? 0;
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+  };
+}
+
+async function callCloudInternal(messages: OpenAIMessage[], temperature: number): Promise<LLMInternalResult> {
   const apiUrl = process.env.LLM_API_URL;
   const model = process.env.LLM_MODEL;
   const apiKey = process.env.LLM_API_KEY;
@@ -65,10 +113,11 @@ async function callCloudInternal(messages: OpenAIMessage[], temperature: number)
 
   const content = response.data.choices?.[0]?.message?.content;
   if (!content) throw new Error("Empty response from cloud LLM.");
-  return content;
+
+  return { content, usage: extractUsage(response.data) };
 }
 
-async function callLocalInternal(messages: OpenAIMessage[], temperature: number): Promise<string> {
+async function callLocalInternal(messages: OpenAIMessage[], temperature: number): Promise<LLMInternalResult> {
   const baseUrl = process.env.LLM_LOCAL_URL ?? "http://localhost:11434";
   const model = process.env.LLM_LOCAL_MODEL ?? "llama3";
 
@@ -85,7 +134,97 @@ async function callLocalInternal(messages: OpenAIMessage[], temperature: number)
 
   const content = response.data.choices?.[0]?.message?.content;
   if (!content) throw new Error("Empty response from local LLM.");
-  return content;
+
+  return { content, usage: extractUsage(response.data) };
+}
+
+// ── Token usage logging ─────────────────────────────────────────────────────
+
+/**
+ * Map LLMFeature enum to the corresponding feature-specific token column
+ * on the LLMUsageSummary model.
+ */
+function featureToTokenColumn(feature: LLMFeature): string {
+  switch (feature) {
+    case LLMFeature.CV_PARSING:
+      return "cvParsingTokens";
+    case LLMFeature.CV_SCORING:
+      return "cvScoringTokens";
+    case LLMFeature.CV_ENRICHMENT:
+      return "cvEnrichmentTokens";
+    case LLMFeature.CHAT:
+      return "chatTokens";
+  }
+}
+
+/**
+ * Silently log token usage to the database.
+ * Creates a LLMUsageLog row and upserts the LLMUsageSummary row.
+ * NEVER throws — errors are logged with console.error and swallowed.
+ */
+async function logTokenUsage(
+  feature: LLMFeature,
+  context: LLMUsageContext,
+  usage: LLMInternalResult["usage"],
+  provider: string,
+  model: string
+): Promise<void> {
+  try {
+    const now = new Date();
+    const month = now.getMonth() + 1; // 1–12
+    const year = now.getFullYear();
+
+    const featureColumn = featureToTokenColumn(feature);
+
+    // Create the raw log entry and upsert the summary atomically
+    await prisma.$transaction([
+      prisma.lLMUsageLog.create({
+        data: {
+          organisationId: context.organisationId,
+          userId: context.userId,
+          feature,
+          provider,
+          model,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          month,
+          year,
+        },
+      }),
+      prisma.lLMUsageSummary.upsert({
+        where: {
+          organisationId_month_year: {
+            organisationId: context.organisationId,
+            month,
+            year,
+          },
+        },
+        create: {
+          organisationId: context.organisationId,
+          month,
+          year,
+          totalTokens: usage.totalTokens,
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          [featureColumn]: usage.totalTokens,
+          callCount: 1,
+        },
+        update: {
+          totalTokens: { increment: usage.totalTokens },
+          promptTokens: { increment: usage.promptTokens },
+          completionTokens: { increment: usage.completionTokens },
+          [featureColumn]: { increment: usage.totalTokens },
+          callCount: { increment: 1 },
+        },
+      }),
+    ]);
+  } catch (err) {
+    console.error(
+      "⚠️ Failed to log LLM token usage (non-blocking):",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -104,13 +243,18 @@ async function callLocalInternal(messages: OpenAIMessage[], temperature: number)
  *     temperature: 0.3,
  *   })
  *
+ * Token tracking usage (pass feature + context to enable silent logging):
+ *   callLLM(prompt, systemPrompt, undefined, LLMFeature.CV_PARSING, { organisationId, userId })
+ *
  * When `options.messages` is provided, the `prompt` argument is ignored and
  * the conversation history is used instead.
  */
 export async function callLLM(
   prompt: string,
   systemPrompt: string,
-  options?: CallLLMOptions
+  options?: CallLLMOptions,
+  feature?: LLMFeature,
+  context?: LLMUsageContext
 ): Promise<string> {
   const provider = process.env.LLM_PROVIDER ?? "local";
   const temperature = options?.temperature ?? 0;
@@ -132,9 +276,29 @@ export async function callLLM(
     ];
   }
 
+  // Call the appropriate provider
+  let result: LLMInternalResult;
+
   if (provider === "cloud") {
-    return callCloudInternal(messages, temperature);
+    result = await callCloudInternal(messages, temperature);
+  } else {
+    result = await callLocalInternal(messages, temperature);
   }
 
-  return callLocalInternal(messages, temperature);
+  // Log token usage silently if feature + context are provided
+  if (feature && context) {
+    const modelName =
+      provider === "cloud"
+        ? process.env.LLM_MODEL ?? "unknown"
+        : process.env.LLM_LOCAL_MODEL ?? "llama3";
+
+    // Fire-and-forget — never block the response
+    logTokenUsage(feature, context, result.usage, provider, modelName).catch(
+      () => {
+        // Already handled inside logTokenUsage, but double-safety
+      }
+    );
+  }
+
+  return result.content;
 }

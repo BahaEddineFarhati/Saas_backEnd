@@ -1,8 +1,8 @@
 import { Worker, Job } from "bullmq";
 import { InputJsonValue } from "@prisma/client/runtime/library";
-import { CandidateStatus } from "@prisma/client";
+import { CandidateStatus, LLMFeature } from "@prisma/client";
 import { redisConnection, CV_SCORING_QUEUE } from "@/lib/queue";
-import { callLLM } from "@/lib/llm";
+import { callLLM, LLMUsageContext } from "@/lib/llm";
 import { prisma } from "@/lib/prisma";
 
 export interface CvScoringJobData {
@@ -162,7 +162,7 @@ async function processScoringJob(job: Job<CvScoringJobData>): Promise<void> {
     where: { id: candidateId },
     select: {
       parsedJson: true,
-      jobOpening: { select: { profileDescription: true } },
+      jobOpening: { select: { profileDescription: true, organisationId: true, createdById: true } },
     },
   });
 
@@ -170,11 +170,20 @@ async function processScoringJob(job: Job<CvScoringJobData>): Promise<void> {
     throw new Error(`Candidate ${candidateId} not found`);
   }
 
+  // Build usage context for LLM token tracking
+  const usageContext: LLMUsageContext = {
+    organisationId: candidate.jobOpening.organisationId,
+    userId: candidate.jobOpening.createdById,
+  };
+
   console.log(`🎯 Scoring candidate ${candidateId}`);
 
   const llmResponse = await callLLM(
     SCORING_PROMPT(candidate.jobOpening.profileDescription, candidate.parsedJson),
-    SCORING_SYSTEM_PROMPT
+    SCORING_SYSTEM_PROMPT,
+    undefined,
+    LLMFeature.CV_SCORING,
+    usageContext
   );
 
   const result = validateScoringResult(extractJsonFromResponse(llmResponse));
@@ -195,7 +204,8 @@ async function processScoringJob(job: Job<CvScoringJobData>): Promise<void> {
     candidateId,
     candidate.parsedJson,
     candidate.jobOpening.profileDescription,
-    result
+    result,
+    usageContext
   );
 }
 
@@ -208,17 +218,19 @@ export async function enrichCandidate(
   candidateId: string,
   parsedJson: unknown,
   profileDescription: string,
-  scoringResult: ScoringResult
+  scoringResult: ScoringResult,
+  usageContext?: LLMUsageContext
 ): Promise<void> {
   console.log(`📝 Enriching candidate ${candidateId} (summary + interview questions)`);
 
   const [summaryOutcome, questionsOutcome] = await Promise.allSettled([
-    generateSummary(parsedJson, profileDescription),
+    generateSummary(parsedJson, profileDescription, usageContext),
     generateInterviewQuestions(
       parsedJson,
       profileDescription,
       scoringResult.missingCriteria,
-      scoringResult.strengths
+      scoringResult.strengths,
+      usageContext
     ),
   ]);
 
@@ -255,11 +267,15 @@ export async function enrichCandidate(
 
 async function generateSummary(
   parsedJson: unknown,
-  profileDescription: string
+  profileDescription: string,
+  usageContext?: LLMUsageContext
 ): Promise<string> {
   const response = await callLLM(
     SUMMARY_PROMPT(profileDescription, parsedJson),
-    SUMMARY_SYSTEM_PROMPT
+    SUMMARY_SYSTEM_PROMPT,
+    undefined,
+    LLMFeature.CV_ENRICHMENT,
+    usageContext
   );
 
   const summary = response.trim();
@@ -273,11 +289,15 @@ async function generateInterviewQuestions(
   parsedJson: unknown,
   profileDescription: string,
   missingCriteria: string[],
-  strengths: string[]
+  strengths: string[],
+  usageContext?: LLMUsageContext
 ): Promise<InterviewQuestion[]> {
   const response = await callLLM(
     INTERVIEW_PROMPT(profileDescription, parsedJson, missingCriteria, strengths),
-    INTERVIEW_SYSTEM_PROMPT
+    INTERVIEW_SYSTEM_PROMPT,
+    undefined,
+    LLMFeature.CV_ENRICHMENT,
+    usageContext
   );
 
   const rawArray = extractJsonArrayFromResponse(response);
