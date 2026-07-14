@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { catchAsync } from "@/utils/catchAsync";
+import { prisma } from "@/lib/prisma";
 import * as organisationService from "@/services/organisationService";
 
 /**
@@ -137,5 +138,43 @@ export const inviteMember = catchAsync(async (req: Request, res: Response) => {
   res.status(201).json({
     success: true,
     data: invite,
+  });
+});
+
+/**
+ * GET /api/v1/organisation/usage
+ * Returns the current month's LLM usage summary for the caller's own organisation.
+ * Scoped to the authenticated user's organisationId — no cross-org access.
+ */
+export const getOwnUsage = catchAsync(async (req: Request, res: Response) => {
+  const organisationId = req.user!.organisationId!;
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+
+  const summary = await prisma.lLMUsageSummary.findUnique({
+    where: {
+      organisationId_month_year: { organisationId, month, year },
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      summary: summary
+        ? {
+            month: summary.month,
+            year: summary.year,
+            totalTokens: summary.totalTokens,
+            promptTokens: summary.promptTokens,
+            completionTokens: summary.completionTokens,
+            cvParsingTokens: summary.cvParsingTokens,
+            cvScoringTokens: summary.cvScoringTokens,
+            cvEnrichmentTokens: summary.cvEnrichmentTokens,
+            chatTokens: summary.chatTokens,
+            callCount: summary.callCount,
+          }
+        : null,
+    },
   });
 });

@@ -9,6 +9,7 @@ import {
   updateMemberRole,
   deactivateMember,
   inviteMember,
+  getOwnUsage,
 } from "@/controllers/organisationController";
 
 const router = Router();
@@ -51,5 +52,11 @@ router.delete("/members/:userId", deactivateMember);
  * Sends an invite to a new team member by email
  */
 router.post("/members/invite", inviteMember);
+
+/**
+ * GET /api/v1/organisation/usage
+ * Returns current month LLM usage for the caller's own organisation
+ */
+router.get("/usage", getOwnUsage);
 
 export default router;
