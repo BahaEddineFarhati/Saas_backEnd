@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import multer from "multer";
 import { catchAsync } from "@/utils/catchAsync";
 import authRoutes from "@/routes/authRoutes";
 import jobRoutes from "@/routes/jobRoutes";
@@ -9,8 +10,10 @@ import notificationRoutes from "@/routes/notificationRoutes";
 import profileRoutes from "@/routes/profileRoutes";
 import { verifyAuthToken } from "@/middleware/authMiddleware";
 import { requireSuperAdmin } from "@/middleware/requireSuperAdmin";
+import { inboundEmailController } from "@/controllers/emailController";
 
 const router = Router();
+const inboundEmailUpload = multer({ storage: multer.memoryStorage() });
 
 /**
   * GET /api/v1
@@ -48,6 +51,8 @@ router.get(
  * POST /api/v1/auth/refresh
  * POST /api/v1/auth/accept-invite
  */
+router.post("/email/inbound", inboundEmailUpload.any(), inboundEmailController);
+
 router.use("/auth", authRoutes);
 
 /**

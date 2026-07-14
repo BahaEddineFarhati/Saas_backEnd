@@ -8,9 +8,8 @@ import {
   validateUploadedFiles,
   type FileValidationError,
 } from "@/lib/multer";
-import { downloadFile, uploadFile } from "@/lib/storage";
-import { cvParsingQueue } from "@/lib/queue";
-import type { CvParsingJobData } from "@/workers/cvParser.worker";
+import { downloadFile } from "@/lib/storage";
+import { createPendingCandidateFromFile } from "@/services/jobService";
 
 /**
  * POST /api/v1/jobs
@@ -279,38 +278,12 @@ export const uploadCandidates = catchAsync(
 
     try {
       for (const file of files) {
-        // Create unique filename for storage with job ID and timestamp
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(7);
-        const fileExtension = file.originalname.split(".").pop();
-        const uniqueFileName = `jobs/${jobId}/${timestamp}-${random}.${fileExtension}`;
-
-        // Upload file to R2 storage
-        const rawFileUrl = await uploadFile(
+        const candidate = await createPendingCandidateFromFile(
+          jobId,
           file.buffer,
-          uniqueFileName,
+          file.originalname,
           file.mimetype
         );
-
-        const candidate = await prisma.candidate.create({
-          data: {
-            firstName: "",
-            lastName: "",
-            email: "",
-            rawFileUrl,
-            status: CandidateStatus.PENDING,
-            jobOpeningId: jobId,
-          },
-        });
-
-        const jobData: CvParsingJobData = {
-          candidateId: candidate.id,
-          fileUrl: rawFileUrl,
-        };
-
-        await cvParsingQueue.add("parse-cv", jobData, {
-          jobId: `parse-cv-${candidate.id}`,
-        });
 
         createdCandidates.push({
           id: candidate.id,
