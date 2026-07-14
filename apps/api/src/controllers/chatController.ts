@@ -145,6 +145,82 @@ export const sendMessage = catchAsync(
       },
     });
 
+    // ── Greeting / Small Talk short-circuit (V3) ──────────────────────────────
+    // Detect generic greetings and small talk (e.g., "bnj", "ça va", "merci")
+    // to respond with a canned message directly, avoiding the LLM prompt bypass.
+    const GREETINGS_FR = new Set(["salut", "bonjour", "bonsoir", "coucou", "bnj", "slt", "cc"]);
+    const GREETINGS_ALL = new Set([
+      "hi", "hello", "hey", "yo", "sup", "hola", "hi there", "hello there",
+      ...GREETINGS_FR
+    ]);
+
+    const normalizedMessage = message.trim().toLowerCase().replace(/[^a-zA-ZÀ-ÿ\s]/g, "").trim();
+    const words = normalizedMessage.split(/\s+/).filter(Boolean);
+
+    let isGreeting = false;
+
+    if (normalizedMessage === "" || GREETINGS_ALL.has(normalizedMessage)) {
+      isGreeting = true;
+    } else if (words.length > 0 && words.length <= 3 && !message.includes("?")) {
+      // Fallback rule for generic/small talk
+      // Get all candidate names for this job opening to avoid intercepting a candidate query
+      const candidates = await prisma.candidate.findMany({
+        where: { jobOpeningId: jobId },
+        select: { firstName: true, lastName: true },
+      });
+
+      const restrictedKeywords = new Set([
+        "candidat", "candidate", "score", "poste", "job", "docker", "kubernetes",
+        "compétence", "skill", "shortlist", "recommand", "cv"
+      ]);
+
+      const containsRestricted = words.some(word => {
+        if (restrictedKeywords.has(word)) return true;
+        // Check candidate names
+        return candidates.some(c => {
+          const fn = c.firstName?.toLowerCase();
+          const ln = c.lastName?.toLowerCase();
+          return (fn && fn === word) || (ln && ln === word);
+        });
+      });
+
+      if (!containsRestricted) {
+        isGreeting = true;
+      }
+    }
+
+    if (isGreeting) {
+      // Simple heuristic for language detection: check for French greeting words, accents, or common French words
+      const hasFrenchAccents = /[éèêëàâäôöûüçïîÿ]/i.test(message);
+      const frenchCommonWords = new Set([
+        "comment", "vous", "allez", "ça", "ca", "va", "merci", "bonjour", "salut",
+        "svp", "oui", "non", "peux", "pouvez", "es", "êtes", "etes", "bonsoir",
+        "coucou", "bnj", "slt", "cc"
+      ]);
+      const hasFrenchWord = words.some(word => frenchCommonWords.has(word));
+
+      const isFrench =
+        normalizedMessage === "" ||
+        hasFrenchAccents ||
+        hasFrenchWord;
+
+      const cannedResponse = isFrench
+        ? "Bonjour ! Je suis l'assistant de recrutement pour ce poste. Posez-moi une question sur les candidats ou les résultats."
+        : "Hi! I'm the recruitment assistant for this job opening. Ask me anything about the candidates or results.";
+
+      const assistantMessage = await prisma.chatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: ChatMessageRole.ASSISTANT,
+          content: cannedResponse,
+        },
+        select: { id: true, role: true, content: true, createdAt: true },
+      });
+
+      res.status(201).json({ message: assistantMessage });
+      return;
+    }
+
     // ── Fetch conversation history (last 20 messages) ────────────────────────
     const totalMessages = await prisma.chatMessage.count({
       where: { sessionId: session.id },
@@ -165,8 +241,12 @@ export const sendMessage = catchAsync(
     const suggestionsInstruction =
       "\n\n" +
       "IMPORTANT: You MUST respond in the exact same language as the user (e.g., if the user writes in French, respond in French; if they write in English, respond in English).\n" +
-      "At the very end of your response, on a new line, you MUST output exactly: SUGGESTIONS:[\"question 1\",\"question 2\"]\n" +
-      "These should be exactly 2 short follow-up questions (under 60 characters each, written in the third person, in the same language as your response) that the user might want to ask you next about the candidates.";
+      "After your answer, add exactly one line with no other text on it, in this EXACT format (a JSON array of exactly 2 FULL QUESTIONS, double-quoted, third-person, under 60 characters each, same language as your answer):\n" +
+      "SUGGESTIONS:[\"...\",\"...\"]\n" +
+      "Example of a CORRECT suggestions line: SUGGESTIONS:[\"What is [Candidate]'s level in [skill]?\",\"Does [Candidate] have experience with [technology]?\"]\n" +
+      "Example of an INCORRECT suggestions line (DO NOT do this — names alone are not questions): SUGGESTIONS:[\"[Candidate Name]\",\"[Another Candidate]\"]\n" +
+      "Each suggestion MUST be a complete, grammatically valid question ending in a question mark.\n" +
+      "Do not write anything after that line. Do not ask the user questions directly in your main answer — any follow-up questions belong ONLY inside the SUGGESTIONS line.";
 
     const conversationHistory = history.map((m) => {
       return {
@@ -187,6 +267,11 @@ export const sendMessage = catchAsync(
     let cleanContent = assistantContent;
     let suggestions: string[] | undefined;
 
+    const isValidSuggestion = (s: string) => {
+      const trimmed = s.trim();
+      return trimmed.endsWith("?") && trimmed.split(/\s+/).filter(Boolean).length >= 4;
+    };
+
     const matchIndex = assistantContent.search(/SUGGESTIONS:/i);
     if (matchIndex !== -1) {
       const mainResponse = assistantContent.slice(0, matchIndex).trim();
@@ -197,7 +282,10 @@ export const sendMessage = catchAsync(
         try {
           const parsed = JSON.parse(suggestionsSection);
           if (Array.isArray(parsed) && parsed.every((s: unknown) => typeof s === "string")) {
-            suggestions = parsed.slice(0, 2);
+            const valid = (parsed as string[]).filter(isValidSuggestion);
+            if (valid.length >= 2) {
+              suggestions = valid.slice(0, 2);
+            }
           }
         } catch {
           // Fall back to line parsing
@@ -214,12 +302,39 @@ export const sendMessage = catchAsync(
             listItems.push(cleanLine);
           }
         }
-        if (listItems.length > 0) {
-          suggestions = listItems.slice(0, 2);
+        const valid = listItems.filter(isValidSuggestion);
+        if (valid.length >= 2) {
+          suggestions = valid.slice(0, 2);
         }
       }
 
       cleanContent = mainResponse;
+    }
+
+    // ── Always strip leaked trailing questions from cleanContent ─────────────
+    // The LLM sometimes writes recruiter-directed questions in the main answer
+    // body (before or without the SUGGESTIONS marker). Detect and remove them.
+    {
+      const parts = cleanContent.split(/\n\n/);
+      if (parts.length >= 2) {
+        const trailingSegments: string[] = [];
+        for (let i = parts.length - 1; i >= Math.max(0, parts.length - 2); i--) {
+          const segment = parts[i].trim();
+          const segmentLines = segment.split(/\n/).map((l: string) => l.trim()).filter(Boolean);
+          const allQuestions = segmentLines.length > 0 && segmentLines.every((l: string) => l.endsWith("?"));
+          if (allQuestions && segmentLines.length <= 2) {
+            trailingSegments.unshift(String(i));
+          } else {
+            break;
+          }
+        }
+
+        if (trailingSegments.length > 0) {
+          const firstTrailingIdx = Number(trailingSegments[0]);
+          cleanContent = parts.slice(0, firstTrailingIdx).join("\n\n").trim();
+          console.warn("applied fallback trim on trailing question-like lines");
+        }
+      }
     }
 
     // ── Save assistant response ──────────────────────────────────────────────
