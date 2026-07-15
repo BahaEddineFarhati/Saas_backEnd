@@ -45,6 +45,17 @@ const generateInboundEmailCode = async (): Promise<string> => {
   throw new AppError("Unable to generate a unique inbound email code", 500, "INBOUND_EMAIL_CODE_FAILED");
 };
 
+const generateInboundEmailDetails = async (title: string) => {
+  const inboundEmailCode = await generateInboundEmailCode();
+  const inboundEmailDomain = process.env.INBOUND_EMAIL_DOMAIN || "mail.linkup.tn";
+  const inboundEmail = `${slugifyTitle(title)}-${inboundEmailCode}@${inboundEmailDomain}`;
+
+  return {
+    inboundEmailCode,
+    inboundEmail,
+  };
+};
+
 export const createPendingCandidateFromFile = async (
   jobId: string,
   fileBuffer: Buffer,
@@ -143,9 +154,7 @@ export const createJob = async (
   organisationId: string,
   createdById: string
 ) => {
-  const inboundEmailCode = await generateInboundEmailCode();
-  const inboundEmailDomain = process.env.INBOUND_EMAIL_DOMAIN || "mail.linkup.tn";
-  const inboundEmail = `${slugifyTitle(title)}-${inboundEmailCode}@${inboundEmailDomain}`;
+  const { inboundEmailCode, inboundEmail } = await generateInboundEmailDetails(title);
 
   const job = await prisma.jobOpening.create({
     data: {
