@@ -179,6 +179,10 @@ export const getUsageHistory = catchAsync(
         month: true,
         year: true,
         totalTokens: true,
+        cvParsingTokens: true,
+        cvScoringTokens: true,
+        cvEnrichmentTokens: true,
+        chatTokens: true,
         callCount: true,
       },
     });
@@ -187,7 +191,16 @@ export const getUsageHistory = catchAsync(
     summaries.reverse();
 
     // Build full 12-month timeline with zeros for missing months
-    const history: Array<{ month: number; year: number; totalTokens: number; callCount: number }> = [];
+    const history: Array<{
+      month: number;
+      year: number;
+      totalTokens: number;
+      cvParsingTokens: number;
+      cvScoringTokens: number;
+      cvEnrichmentTokens: number;
+      chatTokens: number;
+      callCount: number;
+    }> = [];
     for (let i = 11; i >= 0; i--) {
       let m = currentMonth - i;
       let y = currentYear;
@@ -201,6 +214,10 @@ export const getUsageHistory = catchAsync(
         month: m,
         year: y,
         totalTokens: existing?.totalTokens ?? 0,
+        cvParsingTokens: existing?.cvParsingTokens ?? 0,
+        cvScoringTokens: existing?.cvScoringTokens ?? 0,
+        cvEnrichmentTokens: existing?.cvEnrichmentTokens ?? 0,
+        chatTokens: existing?.chatTokens ?? 0,
         callCount: existing?.callCount ?? 0,
       });
     }
