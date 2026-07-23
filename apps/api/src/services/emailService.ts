@@ -120,6 +120,85 @@ export const sendInviteEmail = async (params: InviteEmailParams): Promise<void> 
   );
 };
 
+interface InboundEmailAutoReplyParams {
+  to: string;
+  jobTitle: string;
+  reason: "processed" | "invalid_attachment" | "job_not_found";
+}
+
+export const sendInboundEmailAutoReply = async (params: InboundEmailAutoReplyParams): Promise<void> => {
+  const { to, jobTitle, reason } = params;
+  const fromEmail = process.env.BREVO_FROM_EMAIL ?? "noreply@linkup.app";
+  const fromName = process.env.BREVO_FROM_NAME ?? "LinkUp";
+
+  let subject = "Réception de votre candidature";
+  let text = "Nous avons bien reçu votre email.";
+  let html = "<p>Nous avons bien reçu votre email.</p>";
+
+  if (reason === "processed") {
+    subject = `Votre CV a bien été reçu pour ${jobTitle}`;
+    text = `Votre CV a bien été reçu pour le poste ${jobTitle}. Notre équipe l'examinera et vous contactera si votre profil correspond à nos attentes.`;
+    html = `<div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px;"><h2 style="color:#1a1a2e;">Candidature reçue</h2><p>Votre CV a bien été reçu pour le poste ${jobTitle}. Notre équipe l'examinera et vous contactera si votre profil correspond à nos attentes.</p></div>`;
+  } else if (reason === "invalid_attachment") {
+    subject = `Pièce jointe invalide pour ${jobTitle}`;
+    text = `Nous avons bien reçu votre email pour le poste ${jobTitle} mais aucune pièce jointe valide n'a été détectée. Merci de renvoyer votre CV en format PDF ou Word.`;
+    html = `<div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px;"><h2 style="color:#1a1a2e;">Pièce jointe invalide</h2><p>Nous avons bien reçu votre email pour le poste ${jobTitle} mais aucune pièce jointe valide n'a été détectée. Merci de renvoyer votre CV en format PDF ou Word.</p></div>`;
+  } else {
+    subject = `Offre d'emploi non identifiée`;
+    text = `Nous n'avons pas pu identifier l'offre d'emploi correspondante. Merci de vérifier l'adresse email ou le code de l'offre dans l'objet de votre email.`;
+    html = `<div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px;"><h2 style="color:#1a1a2e;">Offre non identifiée</h2><p>Nous n'avons pas pu identifier l'offre d'emploi correspondante. Merci de vérifier l'adresse email ou le code de l'offre dans l'objet de votre email.</p></div>`;
+  }
+
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "api-key": process.env.BREVO_API_KEY,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: fromEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(JSON.stringify(errData));
+      }
+
+      return;
+    } catch (error) {
+      console.error("❌ Failed to send inbound auto-reply via Brevo API:", error);
+      return;
+    }
+  }
+
+  if (process.env.BREVO_SMTP_USER && process.env.BREVO_SMTP_PASS) {
+    try {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to,
+        subject,
+        text,
+        html,
+      });
+      return;
+    } catch (error) {
+      console.error("❌ Failed to send inbound auto-reply via SMTP:", error);
+      return;
+    }
+  }
+
+  console.warn(`[emailService] No Brevo credentials configured — skipping inbound auto-reply for ${to}.`);
+};
+
 interface PasswordResetEmailParams {
   to: string;
   firstName: string;

@@ -1,6 +1,10 @@
+import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/AppError";
-import { deleteFile } from "@/lib/storage";
+import { deleteFile, uploadFile } from "@/lib/storage";
+import { cvParsingQueue } from "@/lib/queue";
+import type { CvParsingJobData } from "@/workers/cvParser.worker";
+import { CandidateStatus } from "@prisma/client";
 
 export type ScoringStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 
@@ -16,6 +20,77 @@ export interface CandidateScoreSortItem {
   id: string;
   score: number | null;
 }
+
+const slugifyTitle = (title: string): string => {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "job";
+};
+
+const generateInboundEmailCode = async (): Promise<string> => {
+  for (let i = 0; i < 10; i += 1) {
+    const code = randomBytes(3).toString("hex").slice(0, 6).toUpperCase();
+    const existing = await prisma.jobOpening.findFirst({
+      where: { inboundEmailCode: code },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return code;
+    }
+  }
+
+  throw new AppError("Unable to generate a unique inbound email code", 500, "INBOUND_EMAIL_CODE_FAILED");
+};
+
+const generateInboundEmailDetails = async (title: string) => {
+  const inboundEmailCode = await generateInboundEmailCode();
+  const inboundEmailDomain = process.env.INBOUND_EMAIL_DOMAIN || "mail.linkup.tn";
+  const inboundEmail = `${slugifyTitle(title)}-${inboundEmailCode}@${inboundEmailDomain}`;
+
+  return {
+    inboundEmailCode,
+    inboundEmail,
+  };
+};
+
+export const createPendingCandidateFromFile = async (
+  jobId: string,
+  fileBuffer: Buffer,
+  originalName: string,
+  mimeType: string
+) => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(7);
+  const fileExtension = originalName.split(".").pop() ?? "bin";
+  const uniqueFileName = `jobs/${jobId}/${timestamp}-${random}.${fileExtension}`;
+
+  const rawFileUrl = await uploadFile(fileBuffer, uniqueFileName, mimeType);
+
+  const candidate = await prisma.candidate.create({
+    data: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      rawFileUrl,
+      status: CandidateStatus.PENDING,
+      jobOpeningId: jobId,
+    },
+  });
+
+  const jobData: CvParsingJobData = {
+    candidateId: candidate.id,
+    fileUrl: rawFileUrl,
+  };
+
+  await cvParsingQueue.add("parse-cv", jobData, {
+    jobId: `parse-cv-${candidate.id}`,
+  });
+
+  return candidate;
+};
 
 export const calculateScoringStatusSummary = ({
   totalCandidates,
@@ -79,6 +154,8 @@ export const createJob = async (
   organisationId: string,
   createdById: string
 ) => {
+  const { inboundEmailCode, inboundEmail } = await generateInboundEmailDetails(title);
+
   const job = await prisma.jobOpening.create({
     data: {
       title,
@@ -86,6 +163,8 @@ export const createJob = async (
       status: "OPEN",
       organisationId,
       createdById,
+      inboundEmailCode,
+      inboundEmail,
     },
     select: {
       id: true,
@@ -94,6 +173,8 @@ export const createJob = async (
       status: true,
       organisationId: true,
       createdById: true,
+      inboundEmail: true,
+      inboundEmailCode: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -132,6 +213,7 @@ export const getJobsByOrganisation = async (
       id: true,
       title: true,
       status: true,
+      inboundEmail: true,
       createdAt: true,
       _count: {
         select: { candidates: true },
@@ -149,6 +231,7 @@ export const getJobsByOrganisation = async (
     id: job.id,
     title: job.title,
     status: job.status,
+    inboundEmail: job.inboundEmail,
     createdAt: job.createdAt,
     candidateCount: job._count.candidates,
   }));
@@ -178,6 +261,7 @@ export const getJobById = async (jobId: string, organisationId: string) => {
       status: true,
       organisationId: true,
       createdById: true,
+      inboundEmail: true,
       createdAt: true,
       updatedAt: true,
       _count: {
@@ -217,6 +301,7 @@ export const getJobById = async (jobId: string, organisationId: string) => {
     status: job.status,
     organisationId: job.organisationId,
     createdById: job.createdById,
+    inboundEmail: job.inboundEmail,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     candidateCount: job._count.candidates,
